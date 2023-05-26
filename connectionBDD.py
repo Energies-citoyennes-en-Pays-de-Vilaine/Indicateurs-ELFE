@@ -47,26 +47,39 @@ if __name__ == '__main__':
         print("Connection could not be made due to the following error: \n", ex)
 """
 
+#Importation des packages nécessaires
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
 import sqlalchemy
 import pandas as pd
 
-bdd1 = 'preprod_sortie_ems'
+#Définition de l'url de connection et des noms des bdds
 deburl = 'postgresql+psycopg2://indicateurs:Cxj#j6A6KeR23R89@192.168.30.118:5432/'
-engine = sqlalchemy.create_engine(deburl+bdd1)
+bdd1 = 'preprod_sortie_ems'
+bdd2 = 'preprod_bdd_coordination'
+bdd3 = 'preprod_historisation'
+bdd4 = 'root'
+#Construction de l'URL : dialect+driver://username:password@host:port/database
 
+#Création de la connection à une BDD
 def get_connection(nombdd):
-    return create_engine (deburl+nombdd)
+    return sqlalchemy.create_engine (deburl+nombdd)
 
-if __name__ == '__main__':
+#Test de la connection avec affichage du succès ou non
+def test_connection(nombdd):
     try:
-        # GET THE CONNECTION OBJECT (ENGINE) FOR THE DATABASE
-        engine = get_connection(bdd1)
+        engine = get_connection(nombdd)
         print(
-            f"Connection to " +bdd1+ " created successfully.")
+            f"Connection to " +nombdd+ " created successfully.")
     except Exception as ex:
-        print("Connection to " +bdd1+ " could not be made due to the following error: \n", ex)
+        print("Connection to " +nombdd+ " could not be made due to the following error: \n", ex)
+
+#Connection et test à toutes les bdds
+if __name__ == '__main__':
+    test_connection(bdd1)
+    test_connection(bdd2)
+    test_connection(bdd3)
+    test_connection(bdd4)
 
 """
 sql = '''
