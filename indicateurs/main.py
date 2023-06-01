@@ -1,5 +1,6 @@
 from connectionBDD import *
 import sys
+import pandas as pd
 
 def main():
     
@@ -30,6 +31,14 @@ def main():
         print(f"Table for result created successfully.")
     except Exception as ex:
         print("Table for result could not be made due to the following error: \n", ex)
+        
+    #Test calcul
+    with conn1.engine.connect() as conn:
+        print(pd.read_sql('SELECT * FROM p_c_with_flexible_consumption WHERE data_timestamp>1685690000', con = conn))
+        
+    #Calcul du nombre d'appareils connectés par 1/4h
+    with conn1.engine.connect() as conn:
+        print(pd.read_sql('SELECT first_valid_timestamp, COUNT(*) FROM result GROUP BY first_valid_timestamp ORDER BY first_valid_timestamp DESC', con = conn))
     
 
 if __name__ == "__main__":
@@ -41,7 +50,6 @@ if __name__ == "__main__":
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
 import sqlalchemy as db
-import pandas as pd
 import sys
 from sqlalchemy import select
 from sqlalchemy import func
