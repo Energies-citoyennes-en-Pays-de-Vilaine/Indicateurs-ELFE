@@ -23,7 +23,7 @@ async def main():
         print("Connection to " +bdd1+ " could not be made due to the following error: \n", ex)
         
     try:
-        conn2 = ConnectionBDD(bdd2)
+        conn2 = ConnectionBDD(bdd2, "bdd_coordination_schema")
         print(f"Connection to " +bdd2+ " created successfully.")
     except Exception as ex:
         print("Connection to " +bdd2+ " could not be made due to the following error: \n", ex)
@@ -61,14 +61,23 @@ async def main():
         print(appsem)
     
     #Calcul du pourcentage des appareils de ELFE lancés dans les dernières 24h
-    #with conn2.engine.connect() as conn:
-        #nb_app_EMS = pd.read_sql('SELECT COUNT(*) FROM equipement_pilote_ou_mesure', con=conn)
+    with conn2.engine.connect() as conn:
+        nb_app_EMS = pd.read_sql('SELECT COUNT(*) FROM equipement_pilote_ou_mesure', con=conn)
         #nb_app_EMS = pd.read_sql('SELECT COUNT(*) FROM equipement_pilote_ou_mesure WHERE equipement_pilote_ou_mesure_type_id = 131 OR equipement_pilote_ou_mesure_type_id = 515 OR equipement_pilote_ou_mesure_type_id = 155 OR equipement_pilote_ou_mesure_type_id = 151 OR equipement_pilote_ou_mesure_type_id = 112 OR equipement_pilote_ou_mesure_type_id = 111 OR equipement_pilote_ou_mesure_type_id = 113 OR equipement_pilote_ou_mesure_type_id = 221 OR equipement_pilote_ou_mesure_type_id = 225', con = conn)
-        #print(nb_app_EMS)
-
+        print(nb_app_EMS)
     with conn1.engine.connect() as conn:
         nb_app_lancés_24h = pd.read_sql('SELECT COUNT(*) FROM result WHERE first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)', con = conn)
         print(nb_app_lancés_24h)
+    # machine_type = -1 => pas continue et 131 continu car correspond aux ballons d'eau chaude
+    #Liste continu à terme (en prod) : 131, 151, 155
+    #Liste pas continu à terme (en prod) : 515, 112, 111, 113, 221, 225
+    
+    #Test sqlalchemy
+    #nb_app_lancés_24h = result.select().where(db.or_(db.and_(result.c.machine_type = 131, result.c.decisions_0 = )))
+    #print(nb_app_lancés_24h) #Imprime le SQL
+    #res1 = conn1.engine.connect().execute(nb_app_lancés_24h).fetchall() #extracting top 5 results
+    #print(res1)
+    
         
     #Connection au Zabbix
     try:

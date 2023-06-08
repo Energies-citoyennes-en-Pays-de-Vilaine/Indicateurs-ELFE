@@ -12,12 +12,13 @@ class ConnectionBDD:
     engine:db.Engine
     metadata:db.MetaData
     
-    def __init__(self, nombdd:str):
+    def __init__(self, nombdd:str, nomSchema : str = "public"):
         self.nomBDD = nombdd
+        self.nomSchema = nomSchema
         #Construction de l'URL : dialect+driver://username:password@host:port/database
-        deburl = 'postgresql+psycopg2://indicateurs:Cxj#j6A6KeR23R89@192.168.30.118:5432/'
+        deburl = f"postgresql+psycopg2://indicateurs:Cxj#j6A6KeR23R89@192.168.30.118:5432/{self.nomBDD}"
         #Création de la connection à une BDD
-        self.engine = db.create_engine (deburl+self.nomBDD)
+        self.engine = db.create_engine (deburl, connect_args={"options": f"-csearch_path={self.nomSchema}"})
         #Création du métadata pour accéder à des tables de la BDD
         self.metadata = db.MetaData()
         self.metadata.reflect = True
