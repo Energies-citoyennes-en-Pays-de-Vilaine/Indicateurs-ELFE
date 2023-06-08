@@ -35,5 +35,8 @@ class ConnectionBDD:
     #Importation d'une table grâce au métadata
     def get_table(self, table:str) -> db.Table :
         return db.Table(table, self.metadata, autoload_with=self.engine)
+    
+    def get_table_with_schema (self, table:str, schema:str) -> db.Table:
+        return db.Table(table, self.metadata, schema=schema, autoload_with=self.engine)
 
 
