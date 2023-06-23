@@ -4,8 +4,8 @@ Wants=indicateurs.timer
 
 [Service]
 Type=oneshot
-Environment="exec=/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/main.py"
-ExecStart=/home/lblandin/anaconda3/bin/python ${exec}
+Environment="exec=/home/indicateurs/Indicateurs-ELFE/prod.py"
+ExecStart=/home/usr/bin/python3.9 ${exec}
 
 [Install]
 WantedBy=multi-user.target

@@ -2,14 +2,13 @@ import asyncio
 from connectionBDD import *
 from connectionZabbix import *
 from datetime import datetime
+import time
 import sys
 import pandas as pd
 import os
-import subprocess
-import shutil
-import csv
 from calcul import *
 from pandasql import sqldf
+from pyzabbix import ZabbixAPI
 
 #On récupère le path pour que le fichier exécutable soit créé dans le même répertoire
 path = os.path.dirname(sys.executable)
@@ -189,6 +188,25 @@ async def main():
       #      if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
       #          cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
     print(cumul_enr)
+    
+    
+    #Calcul de l'autoconsommation
+    #On récupère les données du Zabbix
+    zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+    zapi.login("liana", "b6!8Lw7DMbC7khUC")
+    conso_foy : pd.DataFrame
+    print("DEBUT TEST")
+    item_id = "44136"
+    time_till = time.mktime(datetime.now().timetuple())
+    time_from:int = time_till - 60 * 60 * 4  # 4 hours
+    print(time_till)
+    print(time_from)
+    for i in zapi.history.get(itemids = [44136], output="extend", limit="10"):
+        conso_foy.add(i)
+    print(conso_foy)
+    print("FIN TEST")
+        
+    
 
     
     
