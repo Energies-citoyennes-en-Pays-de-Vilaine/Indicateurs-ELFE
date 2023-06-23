@@ -11,3 +11,5 @@ Dans le cas où la source ou la destination est locale, on peut juste indiquer l
 On peut y faire des modifications notamment les descriptions, les variables d'environnement du X.service et le OnCalendar du X.timer. De plus les deux doivent s'entre-référencer via leurs paramètres respectifs Wants et Requires.
 4. Faire sudo systemd enable X.timer pour le lancer
 5. Pour vérifier si ça fonctionne, on peut refaire systemctl status *timer
+
+Manque un git clone car on arrive sur un serveur vide
