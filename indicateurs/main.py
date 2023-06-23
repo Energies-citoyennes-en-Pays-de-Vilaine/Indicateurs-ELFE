@@ -8,6 +8,8 @@ import os
 import subprocess
 import shutil
 import csv
+from calcul import *
+from pandasql import sqldf
 
 #On récupère le path pour que le fichier exécutable soit créé dans le même répertoire
 path = os.path.dirname(sys.executable)
@@ -18,162 +20,199 @@ nowstr = now.strftime("%d%m%Y")
 
 async def main():
     
-    bdd1 = 'preprod_sortie_ems'
-    bdd2 = 'preprod_bdd_coordination'
-    bdd3 = 'preprod_historisation'
+    sortie = 'preprod_sortie_ems'
+    coordo = 'preprod_bdd_coordination'
+    histo = 'preprod_historisation'
     
-    #Connection aux 3 BDD
+    #Connection aux 3 BDDs
     try:
-        conn1 = ConnectionBDD(bdd1)
-        print(f"Connection to " +bdd1+ " created successfully.")
+        conn_sortie = ConnectionBDD(sortie)
+        print(f"Connection to " +sortie+ " created successfully.")
     except Exception as ex:
-        print("Connection to " +bdd1+ " could not be made due to the following error: \n", ex)
+        print("Connection to " +sortie+ " could not be made due to the following error: \n", ex)
         
     try:
-        conn2 = ConnectionBDD(bdd2, "bdd_coordination_schema")
-        print(f"Connection to " +bdd2+ " created successfully.")
+        conn_coordo = ConnectionBDD(coordo, "bdd_coordination_schema")
+        print(f"Connection to " +coordo+ " created successfully.")
     except Exception as ex:
-        print("Connection to " +bdd2+ " could not be made due to the following error: \n", ex)
+        print("Connection to " +coordo+ " could not be made due to the following error: \n", ex)
         
     try:
-        conn3 = ConnectionBDD(bdd3)
-        print(f"Connection to " +bdd3+ " created successfully.")
+        conn_histo = ConnectionBDD(histo)
+        print(f"Connection to " +histo+ " created successfully.")
     except Exception as ex:
-        print("Connection to " +bdd3+ " could not be made due to the following error: \n", ex)
+        print("Connection to " +histo+ " could not be made due to the following error: \n", ex)
     
     #Connection aux tables dont on a besoin
     try:
-        result = conn1.get_table('result')
+        result = conn_sortie.get_table('result')
         print(f"Table for result created successfully.")
     except Exception as ex:
         print("Table for result could not be made due to the following error: \n", ex)
         
     try:
-        conso = conn1.get_table('equipement_pilote_consommation_moyenne')
+        conso = conn_sortie.get_table('equipement_pilote_consommation_moyenne')
         print(f"Table for conso created successfully.")
+        print(conso)
     except Exception as ex:
         print("Table for conso could not be made due to the following error: \n", ex)
         
     try:
-        withflex = conn1.get_table('p_c_with_flexible_consumption')
+        withflex = conn_sortie.get_table('p_c_with_flexible_consumption')
         print(f"Table for p_c_with_flexible_consumption created successfully.")
     except Exception as ex:
         print("Table for p_c_with_flexible_consumption could not be made due to the following error: \n", ex)
         
     try:
-        withoutflex = conn1.get_table('p_c_without_flexible_consumption')
+        withoutflex = conn_sortie.get_table('p_c_without_flexible_consumption')
         print(f"Table for p_c_without_flexible_consumption created successfully.")
     except Exception as ex:
         print("Table for p_c_without_flexible_consumption could not be made due to the following error: \n", ex)
         
     try:
-        equipement_pilote_ou_mesure = conn2.get_table_with_schema('equipement_pilote_ou_mesure', 'bdd_coordination_schema')
+        equipement_pilote_ou_mesure = conn_coordo.get_table_with_schema('equipement_pilote_ou_mesure', 'bdd_coordination_schema')
         print(f"Table for equipement_pilote_ou_mesure created successfully.")
     except Exception as ex:
         print("Table for equipement_pilote_ou_mesure could not be made due to the following error: \n", ex)
     
         
     #Calcul du nombre d'appareils connectés par 1/4h
-    with conn1.engine.connect() as conn:
-        appconn = pd.read_sql("SELECT COUNT(*) FROM result\
-                                GROUP BY first_valid_timestamp\
-                                ORDER BY first_valid_timestamp DESC\
-                                LIMIT 1"\
-                                , con = conn)
-        print(appconn)
+    def indic_appareils_connectes() -> int : 
+        with conn_sortie.engine.connect() as conn:
+            appconn = pd.read_sql("SELECT COUNT(*) FROM result\
+                                    GROUP BY first_valid_timestamp\
+                                    ORDER BY first_valid_timestamp DESC\
+                                    LIMIT 1"\
+                                    , con = conn)
+        return appconn
         
     #Calcul du nombre d'appareils pilotés la semaine dernière
-    with conn1.engine.connect() as conn:
-        appsem = pd.read_sql("SELECT COUNT(DISTINCT machine_id) AS Nombre_appareils_pilotés_la_semaine_dernière FROM result\
-                                WHERE first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 604800)", con = conn)
-        print(appsem)
+    def indic_appareils_pilotes_semaine() -> int :
+        with conn_sortie.engine.connect() as conn:
+            appsem = pd.read_sql("SELECT COUNT(DISTINCT machine_id) AS Nombre_appareils_pilotés_la_semaine_dernière FROM result\
+                                    WHERE first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 604800)", con = conn)
+        return appsem
     
     #Calcul du pourcentage des appareils de ELFE lancés dans les dernières 24h
-    #Il faudra rajouter des clauses OR si de nouveaux types apparaissent, sans ajouter les compteurs
-        # Actuellement, il est mis au niveau du poucentage de machines activées dans Viriya
-
-    with conn2.engine.connect() as conn:
-        nb_app_EMS = pd.read_sql("SELECT COUNT(*) FROM equipement_pilote_ou_mesure\
-                                    WHERE equipement_pilote_ou_mesure_type_id IN (131, 515, 155, 151, 112, 111, 113, 221, 225)"
-                                , con = conn)
-        print("nb app EMS : " , nb_app_EMS)
-        
-    with conn1.engine.connect() as conn:
-        
-        nb_app_lancés_24h_continu = pd.read_sql("SELECT COUNT(DISTINCT machine_id) FROM result \
-                                                    WHERE machine_type IN (131, 151, 155)\
-                                                    AND decisions_0 = 1\
-                                                    AND first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
-                                    , con = conn)
-        print("nb app lancés 24h continu : " , nb_app_lancés_24h_continu)
-        #nb_app_lancés_24h_discontinu = pd.read_sql('SELECT COUNT(*) FROM result WHERE machine_type = -1 AND decisions_0 = 1 AND first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)', con = conn)
-        #print("nb app lancés 24h discontinu : " , nb_app_lancés_24h_discontinu)
-        nb_app_lancés_24h_discontinu = pd.read_sql("SELECT COUNT(*) FROM result AS r1 \
-                                                    INNER JOIN  result AS r2 ON r1.machine_id = r2.machine_id\
-                                                        WHERE r2.machine_type IN (221)\
-                                                        AND r2.first_valid_timestamp = r1.first_valid_timestamp + 900\
-                                                        AND r2.decisions_0 = 0\
-                                                        AND r1.decisions_0 = 1\
-                                                        AND r2.first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
-                                        , con = conn)
-        print("nb app lancés 24h discontinu : " , nb_app_lancés_24h_discontinu)
-        
-        """
-        OR r2.machine_type = 515\
-                                                            OR r2.machine_type = 112\
-                                                            OR r2.machine_type = 111\
-                                                            OR r2.machine_type = 113\
-                                                            OR r2.machine_type = 225\
-        """
-        
-        nb_app_lancés_24h = nb_app_lancés_24h_continu + nb_app_lancés_24h_discontinu
-        print("nb app lancés 24h : ", nb_app_lancés_24h)
-        
-    pourcentage_app_lancés_24h = (100*nb_app_lancés_24h)/nb_app_EMS
-    pourcentage_app_lancés_24h = round(pourcentage_app_lancés_24h, 1)
-    print ("pourcentage app lancés 24h : ", pourcentage_app_lancés_24h)     
-    # machine_type = -1 => pas continue et 131 continu car correspond aux ballons d'eau chaude
-    #Liste continu à terme (en prod) : 131, 151, 155
-    #Liste discontinu à terme (en prod) : 515, 112, 111, 113, 221, 225
+    # Actuellement, il est mis au niveau du pourcentage de machines activées dans Viriya
+    #Rajouter des types dans la liste si de nouveaux types qu'on ne peut pas piloter s'ajoutent
+    def pourcentage_app_lancés_24h() -> int :
+        with conn_coordo.engine.connect() as conn:
+            nb_app_EMS = pd.read_sql("SELECT COUNT(*) FROM equipement_pilote_ou_mesure\
+                                        WHERE equipement_pilote_ou_mesure_type_id NOT IN (410, 901, 910, 920)"
+                                    , con = conn)        
+        with conn_sortie.engine.connect() as conn:
+            nb_app_lancés_24h_continu = pd.read_sql("SELECT COUNT(DISTINCT machine_id) FROM result \
+                                                        WHERE machine_type IN (131, 151, 155)\
+                                                        AND decisions_0 = 1\
+                                                        AND first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
+                                        , con = conn)        
+            nb_app_lancés_24h_discontinu = pd.read_sql("SELECT COUNT(*) FROM result AS r1 \
+                                                        INNER JOIN  result AS r2 ON r1.machine_id = r2.machine_id\
+                                                            WHERE r2.machine_type IN (221)\
+                                                            AND r2.first_valid_timestamp = r1.first_valid_timestamp + 900\
+                                                            AND r2.decisions_0 = 0\
+                                                            AND r1.decisions_0 = 1\
+                                                            AND r2.first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
+                                            , con = conn) # Compléter les machine_type : 112, 111, 113, 225, 515
+        nb_app_lancés_24h = nb_app_lancés_24h_continu + nb_app_lancés_24h_discontinu        
+        pourcentage_app_lancés_24h = (100*nb_app_lancés_24h)/nb_app_EMS
+        pourcentage_app_lancés_24h = round(pourcentage_app_lancés_24h, 1)
+        return pourcentage_app_lancés_24h   
+        #Liste continu à terme (en prod) : 131, 151, 155
+        #Liste discontinu à terme (en prod) : 515, 112, 111, 113, 221, 225
     
-    """
     #Calcul du cumul de kW d'énergie placés par l'EMS depuis le début du projet
-    with conn1.engine.connect() as conn:
-        #cumul_enr = pd.read_sql("SELECT * FROM p_c_with_flexible_consumption LIMIT 10", con=conn)
-        cumul_enr_discontinu = pd.read_sql("SELECT SUM(consommation)\
-                                    FROM result AS res\
-                                    INNER JOIN equipement_pilote_consommation_moyenne AS conso\
-                                    ON res.machine_type = conso.equipement_pilote_type_id\
-                                        WHERE res.decisions_0 = 1\
-                                        AND res.machine_type IN (221, 515, 112, 111, 113, 225)"
-                            , con = conn) # Liste des machine_type à compléter
-        print(cumul_enr_discontinu)
-        cumul_enr_continu = pd.read_sql("SELECT SUM(DISTINCT machine_id, consommation)\
-                                        FROM result AS res\
-                                        INNER JOIN equipement_pilote_consommation_moyenne AS conso\
-                                        ON res.machine_type = conso.equipement_pilote_type_id\
-                                            WHERE res.decisions_0 = 1\
-                                            AND res.machine_type IN (131, 151, 155)"
-                            , con = conn) # Liste des machine_type à compléter
-        print(cumul_enr_continu)
-        cumul_enr = cumul_enr_continu + cumul_enr_discontinu
-        print(cumul_enr)
-        """
+    with conn_sortie.engine.connect() as conn:
+
+        coeffs_discontinu:pd.DataFrame = pd.read_sql("SELECT machine_type, COUNT(*) FROM result\
+                                                WHERE decisions_0 = 1\
+                                                AND machine_type IN (111)\
+                                            GROUP BY machine_type"
+                                    , con = conn) #Compléter les machines_type
+        print("Coeffs discontinu : " , coeffs_discontinu)
+        
+        #testres = pd.DataFrame({'ts': [10, 15, 20, 10], 'machine_id': [1, 1, 1, 2], 'machine_type': [131, 131, 131, 131], 'decisions_0': [1, 1, 1, 1]})
+        
+        #query_finale = """ SELECT SUM(inter.days) FROM (SELECT machine_id, machine_type, COUNT(DISTINCT ts/10) AS days FROM testres
+         #                               WHERE decisions_0 = 1
+          #                              AND machine_type IN(131)
+           #                     GROUP BY machine_id) AS inter
+            #                GROUP BY inter.machine_type """
+
+        #test_final = sqldf(query_finale)
+        #print("TEST ULTIME : ", test_final)
+        
+        query_inter:pd.DataFrame = pd.read_sql(""" SELECT t.machine_id, r.machine_type, t.days FROM 
+                                                    (SELECT machine_id, COUNT(DISTINCT first_valid_timestamp/86400) AS days FROM result
+	                                                WHERE machine_type IN (131)
+                                                    AND decisions_0 = 1
+                                                    GROUP BY machine_id) t 
+                                                 JOIN result r ON r.machine_id = t.machine_id """
+                                    , con = conn)
+        query_inter_2:pd.DataFrame = pd.read_sql(""" SELECT machine_id, COUNT(DISTINCT first_valid_timestamp/86400) AS days FROM result
+	                                                WHERE machine_type IN (131)
+                                                    AND decisions_0 = 1
+                                                    GROUP BY machine_id """
+                                    , con = conn)
+        print("Table inter : ", query_inter)
+        
+
+        #coeffs_continu:pd.DataFrame = pd.read_sql(""" SELECT SUM(inter.days) FROM (SELECT machine_id, machine_type, COUNT(DISTINCT first_valid_timestamp/86400) AS days
+        #                                                                                FROM result
+        #                                                                                WHERE decisions_0 = 1
+         #                                                                               AND machine_type IN(131)
+          #                                                                          GROUP BY machine_id) AS inter
+           #                                             GROUP BY inter.machine_type """
+            #                        , con = conn) #Compléter les machines_type
+        #print("Coeffs continu : " , coeffs_continu)
+        
+    with conn_coordo.engine.connect() as conn:
+        conso_energie:pd.DataFrame = pd.read_sql("SELECT equipement_pilote_type_id, consommation FROM equipement_pilote_consommation_moyenne"
+                        , con = conn)
+        print("Conso énergie : ", conso_energie)
+        print(conso_energie.columns)
+        print(conso_energie.index)
+        for i in conso_energie.index:
+            print(conso_energie.loc[i]['consommation'])
+        print(conso_energie['equipement_pilote_type_id'])
+        print(coeffs_discontinu['machine_type'])
+
+    cumul_enr = 0
+    for i in coeffs_discontinu.index:
+        for j in conso_energie.index:
+            if coeffs_discontinu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
+                cumul_enr += coeffs_discontinu.loc[i]['count'] * conso_energie.loc[j]['consommation']
+    
+    #for i in coeffs_continu.index:
+     #   for j in conso_energie.index:
+      #      if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
+      #          cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
+    print(cumul_enr)
+
+    
     
     #Encapsulation dans un csv
-    df1 = pd.DataFrame(appconn)
-    print(df1)
-    df2 = pd.DataFrame(pourcentage_app_lancés_24h)
-    print(df2)
     filename = f"indics-{nowstr}.csv"
     finalpath = os.path.join(path, filename)
-    fichier = open(finalpath, "w")
+    print("Path : ", finalpath)
+    #fichier = open(finalpath, "w")
+    #/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/indics.csv
+    fichier = open(f"/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/indics.csv", "w")
+    
+    appconn = indic_appareils_connectes()
+    df1 = pd.DataFrame(appconn)
+    print(df1)    
     res1 = df1.to_string (header=False, index = False)
     print(res1)
-    fichier.write("\"Zabbix server\" Nombre_appareils_connectes " + res1 + "\n")
+    fichier.write("\"Zabbix server\" Nombre_appareils_connectes_test " + res1 + "\n")
+    
+    pourcentage_app = pourcentage_app_lancés_24h()
+    df2 = pd.DataFrame(pourcentage_app)
+    print(df2)
     res2 = df2.to_string(header=False, index=False)
     print(res2)
-    fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h " + res2)
+    fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h_test " + res2)
         
     #Connection au Zabbix
     try:
@@ -183,7 +222,7 @@ async def main():
         print("Connection to Zabbix could not be made due to the following error: \n", ex)
     
     try:
-        m1 = zb.Measurement(zab.host, "Nombre_appareils_connectes", res1)
+        m1 = zb.Measurement(zab.host, "Nombre_appareils_connectes_test", res1)
         zab.measurements.add_measurement(m1)
         print(f"Creation of the measurement and adding made successfully.")
     except Exception as ex:
@@ -191,7 +230,7 @@ async def main():
         
     
     try:
-        m2 = zb.Measurement(zab.host, "Pourcentage_app_lances_24h", res2)
+        m2 = zb.Measurement(zab.host, "Pourcentage_app_lances_24h_test", res2)
         zab.measurements.add_measurement(m2)
         print(f"Creation of the measurement and adding made successfully.")
     except Exception as ex:

@@ -1,0 +1,11 @@
+[Unit]
+Description="Indicateurs maj service"
+Wants=indicateurs.timer
+
+[Service]
+Type=oneshot
+Environment="exec=/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/main.py"
+ExecStart=/home/lblandin/anaconda3/bin/python ${exec}
+
+[Install]
+WantedBy=multi-user.target
