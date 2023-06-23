@@ -4,7 +4,7 @@ Wants=indicateurs.timer
 
 [Service]
 Type=oneshot
-Environment="exec=/home/indicateurs/Indicateurs-ELFE/prod.py"
+Environment="exec=/home/indicateurs/Indicateurs-ELFE/indicateurs/prod.py"
 ExecStart=/usr/bin/python3.9 ${exec}
 
 [Install]
