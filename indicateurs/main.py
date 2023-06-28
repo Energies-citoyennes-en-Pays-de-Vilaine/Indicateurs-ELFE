@@ -157,7 +157,7 @@ async def main():
                 for j in conso_energie.index:
                     if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
                         cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
-            return cumul_enr
+            return int(cumul_enr)
                 
             
         """
@@ -244,7 +244,6 @@ async def main():
         #print("Table inter : ", query_inter_2)
     
     """
-    
     #Calcul de l'autoconsommation
     #On récupère les données du Zabbix
     zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
@@ -293,7 +292,14 @@ async def main():
     print(df2)
     res2 = df2.to_string(header=False, index=False)
     print(res2)
-    fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h_test " + res2)
+    fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h_test " + res2 + "\n")
+    
+    cumul_ener = [cumul_enr()]
+    df_cumul = pd.DataFrame(cumul_ener)
+    print(df_cumul)
+    res_cumul = df_cumul.to_string(header=False, index=False)
+    print(res_cumul)
+    fichier.write("\"Zabbix server\" Cumul_energie_placee " + res_cumul + "\n")
         
     #Connection au Zabbix
     try:
@@ -317,6 +323,12 @@ async def main():
     except Exception as ex:
         print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
     
+    try:
+        m_cumul = zb.Measurement(zab.host, "Cumul_energie_placee", res_cumul)
+        zab.measurements.add_measurement(m_cumul)
+        print(f"Creation of the measurement and adding made successfully.")
+    except Exception as ex:
+        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
     
     try:
         await zab.response()
