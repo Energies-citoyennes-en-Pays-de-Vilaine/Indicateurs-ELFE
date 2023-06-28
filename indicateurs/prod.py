@@ -5,6 +5,7 @@ import pandas as pd
 import os
 from calcul import *
 from pandasql import sqldf
+import sqlalchemy
 
 async def main():
     
