@@ -299,7 +299,7 @@ async def main():
     print(df_cumul)
     res_cumul = df_cumul.to_string(header=False, index=False)
     print(res_cumul)
-    fichier.write("\"Zabbix server\" Cumul_energie_placee " + res_cumul + "\n")
+    fichier.write("\"Zabbix server\" Cumul_energie_placee_test " + res_cumul + "\n")
         
     #Connection au Zabbix
     try:
@@ -324,7 +324,7 @@ async def main():
         print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
     
     try:
-        m_cumul = zb.Measurement(zab.host, "Cumul_energie_placee", res_cumul)
+        m_cumul = zb.Measurement(zab.host, "Cumul_energie_placee_test", res_cumul)
         zab.measurements.add_measurement(m_cumul)
         print(f"Creation of the measurement and adding made successfully.")
     except Exception as ex:

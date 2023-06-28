@@ -60,6 +60,42 @@ async def main():
         pourcentage_app_lancés_24h = round(pourcentage_app_lancés_24h, 1)
         return pourcentage_app_lancés_24h
     
+    #Calcul du cumul de kW d'énergie placés par l'EMS depuis le début du projet
+    def cumul_enr() -> int:
+        with conn_sortie.engine.connect() as conn:
+            #On fabrique deux tables sous la forme machine_type | nombre de lancements
+            #1e table pour les machines discoutinues : on compte chaque lancement
+            coeffs_discontinu:pd.DataFrame = pd.read_sql("SELECT machine_type, COUNT(*) FROM result\
+                                                WHERE decisions_0 = 1\
+                                                AND machine_type IN (111)\
+                                            GROUP BY machine_type"
+                                    , con = conn) #Compléter les machines_type
+            #2e table pour les machines continues : si pas de arrêt / relance, on compte un lancement par jour
+            coeffs_continu:pd.DataFrame = pd.read_sql("""SELECT * FROM 
+                                                        (SELECT machine_type, COUNT(*) FROM 
+                                                            (SELECT DISTINCT * FROM 
+                                                                (SELECT first_valid_timestamp/86400 AS day, machine_id, machine_type FROM 
+                                                                        result WHERE decisions_0 = 1) AS T1) AS T2
+                                                                        GROUP BY machine_type) AS T3 WHERE machine_type IN (131)"""
+                                    , con = conn) #Compléter les machines_type
+
+            #On récupère la table machine_type | consommation moyenne.
+            with conn_coordo.engine.connect() as conn:
+                conso_energie:pd.DataFrame = pd.read_sql("SELECT equipement_pilote_type_id, consommation FROM equipement_pilote_consommation_moyenne"
+                        , con = conn)
+            #cumul_enr correspond à l'indicateur final qu'on initialise à 0
+            cumul_enr = 0
+            #On l'incrémente avec pour chaque ligne des tableaux continus et discontinus nb de machines d'un type * moyenne de l'énergie consommée par ce type de machine 
+            for i in coeffs_discontinu.index:
+                for j in conso_energie.index:
+                    if coeffs_discontinu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
+                        cumul_enr += coeffs_discontinu.loc[i]['count'] * conso_energie.loc[j]['consommation']
+            for i in coeffs_continu.index:
+                for j in conso_energie.index:
+                    if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
+                        cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
+            return int(cumul_enr)
+    
     #Encapsulation dans un csv
     #On récupère le path du fichier courant qu'on concatène avec le nom voulu du fichier csv
     path = os.path.dirname(__file__)
@@ -76,7 +112,12 @@ async def main():
     pourcentage_app = pourcentage_app_lancés_24h()
     df2 = pd.DataFrame(pourcentage_app)
     res2 = df2.to_string(header=False, index=False)
-    fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h " + res2)
+    fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h " + res2 + "\n")
+    
+    cumul_ener = [cumul_enr()]
+    df_cumul = pd.DataFrame(cumul_ener)
+    res_cumul = df_cumul.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Cumul_energie_placee " + res_cumul + "\n")
         
     #Connection au Zabbix
     zab = ConnectionZabbix('192.168.30.111', 'Zabbix server')
@@ -88,6 +129,9 @@ async def main():
     m2 = zb.Measurement(zab.host, "Pourcentage_app_lances_24h", res2)
     zab.measurements.add_measurement(m2)
     
+    m_cumul = zb.Measurement(zab.host, "Cumul_energie_placee", res_cumul)
+    zab.measurements.add_measurement(m_cumul)
+
     #Envoi de toutes les mesures au Zabbix
     await zab.response()
 
