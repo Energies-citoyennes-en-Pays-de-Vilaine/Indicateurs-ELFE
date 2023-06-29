@@ -99,13 +99,15 @@ async def main():
         with conn_coordo.engine.connect() as conn:
             nb_app_EMS = pd.read_sql("SELECT COUNT(*) FROM equipement_pilote_ou_mesure\
                                         WHERE equipement_pilote_ou_mesure_type_id NOT IN (410, 901, 910, 920)"
-                                    , con = conn)        
+                                    , con = conn)
+            print("Nb app EMS : ", nb_app_EMS)       
         with conn_sortie.engine.connect() as conn:
             nb_app_lancés_24h_continu = pd.read_sql("SELECT COUNT(DISTINCT machine_id) FROM result \
-                                                        WHERE machine_type IN (131, 151, 155)\
+                                                        WHERE machine_type IN (131, -1)\
                                                         AND decisions_0 = 1\
-                                                        AND first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
-                                        , con = conn)        
+                                                        AND first_valid_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
+                                        , con = conn) # Compléter les machine_type
+            """
             nb_app_lancés_24h_discontinu = pd.read_sql("SELECT COUNT(*) FROM result AS r1 \
                                                         INNER JOIN  result AS r2 ON r1.machine_id = r2.machine_id\
                                                             WHERE r2.machine_type IN (221)\
@@ -114,7 +116,13 @@ async def main():
                                                             AND r1.decisions_0 = 1\
                                                             AND r2.first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
                                             , con = conn) # Compléter les machine_type : 112, 111, 113, 225, 515
-        nb_app_lancés_24h = nb_app_lancés_24h_continu + nb_app_lancés_24h_discontinu        
+            """
+            nb_app_lancés_24h_discontinu = pd.read_sql(""" SELECT COUNT(*) FROM result 
+                                                WHERE decisions_0 = 1
+                                                AND machine_type IN (221)
+                                                AND first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"""
+                                        , con = conn)
+        nb_app_lancés_24h = nb_app_lancés_24h_continu + nb_app_lancés_24h_discontinu
         pourcentage_app_lancés_24h = (100*nb_app_lancés_24h)/nb_app_EMS
         pourcentage_app_lancés_24h = round(pourcentage_app_lancés_24h, 1)
         return pourcentage_app_lancés_24h   
@@ -287,12 +295,14 @@ async def main():
     print(res1)
     fichier.write("\"Zabbix server\" Nombre_appareils_connectes_test " + res1 + "\n")
     
+    print("DEBUT TEST")
     pourcentage_app = pourcentage_app_lancés_24h()
     df2 = pd.DataFrame(pourcentage_app)
     print(df2)
     res2 = df2.to_string(header=False, index=False)
     print(res2)
     fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h_test " + res2 + "\n")
+    print("FIN TEST")
     
     cumul_ener = [cumul_enr()]
     df_cumul = pd.DataFrame(cumul_ener)

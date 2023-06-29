@@ -40,22 +40,13 @@ async def main():
         with conn_coordo.engine.connect() as conn:
             nb_app_EMS = pd.read_sql("SELECT COUNT(*) FROM equipement_pilote_ou_mesure\
                                         WHERE equipement_pilote_ou_mesure_type_id NOT IN (410, 901, 910, 920)"
-                                    , con = conn)        
+                                    , con = conn)
+            print("Nb app EMS : ", nb_app_EMS)
         with conn_sortie.engine.connect() as conn:
-            nb_app_lancés_24h_continu = pd.read_sql("SELECT COUNT(DISTINCT machine_id) FROM result \
-                                                        WHERE machine_type IN (131, 151, 155)\
-                                                        AND decisions_0 = 1\
+            nb_app_lancés_24h = pd.read_sql("SELECT COUNT(DISTINCT machine_id) FROM result \
+                                                        WHERE decisions_0 = 1\
                                                         AND first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
-                                        , con = conn)        
-            nb_app_lancés_24h_discontinu = pd.read_sql("SELECT COUNT(*) FROM result AS r1 \
-                                                        INNER JOIN  result AS r2 ON r1.machine_id = r2.machine_id\
-                                                            WHERE r2.machine_type IN (221, 112, 111, 113, 225, 515)\
-                                                            AND r2.first_valid_timestamp = r1.first_valid_timestamp + 900\
-                                                            AND r2.decisions_0 = 0\
-                                                            AND r1.decisions_0 = 1\
-                                                            AND r2.first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
-                                            , con = conn)
-        nb_app_lancés_24h = nb_app_lancés_24h_continu + nb_app_lancés_24h_discontinu        
+                                        , con = conn)     
         pourcentage_app_lancés_24h = (100*nb_app_lancés_24h)/nb_app_EMS
         pourcentage_app_lancés_24h = round(pourcentage_app_lancés_24h, 1)
         return pourcentage_app_lancés_24h
