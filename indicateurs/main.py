@@ -17,6 +17,13 @@ path = os.path.dirname(sys.executable)
 now = datetime.now()
 nowstr = now.strftime("%d%m%Y")
 
+#Enabling debug logging for the pyzabbix API
+stream = logging.StreamHandler(sys.stdout)
+stream.setLevel(logging.DEBUG)
+log = logging.getLogger('pyzabbix')
+log.addHandler(stream)
+log.setLevel(logging.DEBUG)
+
 async def main():
     
     sortie = 'preprod_sortie_ems'
@@ -251,34 +258,126 @@ async def main():
             #                        , con = conn)
         #print("Table inter : ", query_inter_2)
     
-    """
-    #Calcul de l'autoconsommation
-    #On récupère les données du Zabbix
-    zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-    zapi.login("liana", "b6!8Lw7DMbC7khUC")
-    item_id = "44136"
-    time_till = time.mktime(datetime.now().timetuple())
-    time_from:int = time_till - 60 * 60 * 4  # 4 hours
-    print(time_till)
-    print(time_from)
-    history = zapi.history.get(itemids = [44136], output="extend", history = 0) #on peut ajouter des paramètres pour un time from et time till
-    #On met les données récupérées dans un dataframe pour pouvoir les manipuler
-    conso_foy = pd.DataFrame(history)
-    print("Conso foyers : ", conso_foy)
-    #Requête SQL simple pour juste sommer toutes les consommations
-    """
-    #query_somme = """ SELECT SUM(value) FROM conso_foy """
-    #test_somme = sqldf(query_somme)
-    #print("TEST ULTIME : ", test_somme)
-    #Il faudrait la diviser par le nombre de compteurs linky dispos (il y a surement une liste quelque part dans la bdd)
-    #with conn_coordo.engine.connect() as conn:
-     #   nb_compteurs:int = pd.read_sql (""" SELECT COUNT(*) FROM equipement_pilote_compteur_electrique """)
-    #print("Compteurs : ", nb_compteurs)
     
+    #Calcul du pourcentage de la conso d'énergie des foyers placée
+    def conso_enr_placee() -> int:
+        #On commence par calculer la quantité d'énergie placée dans les dernières 24h
+        with conn_sortie.engine.connect() as conn:
+                #On fabrique deux tables sous la forme machine_type | nombre de lancements
+                #1e table pour les machines discoutinues : on compte chaque lancement
+                coeffs_discontinu:pd.DataFrame = pd.read_sql("SELECT machine_type, COUNT(*) FROM result\
+                                                    WHERE decisions_0 = 1\
+                                                    AND machine_type IN (111)\
+                                                    AND first_valid_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)\
+                                                GROUP BY machine_type"
+                                        , con = conn) #Compléter les machines_type
+                print("Coeffs discontinus : " , coeffs_discontinu)
+                #2e table pour les machines continues : si pas de arrêt / relance, on compte un lancement pour les dernières 24h
+                coeffs_continu:pd.DataFrame = pd.read_sql("""SELECT * FROM 
+                                                            (SELECT machine_type, COUNT(*) FROM 
+                                                                (SELECT DISTINCT * FROM 
+                                                                    (SELECT machine_id, machine_type FROM result
+                                                                            WHERE first_valid_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)
+                                                                            AND decisions_0 = 1) AS T1) AS T2
+                                                                            GROUP BY machine_type) AS T3 WHERE machine_type IN (131)
+                                                                            """
+                                        , con = conn) #Compléter les machines_type
+                print("Coeffs continus : ", coeffs_continu)
+
+                #On récupère la table machine_type | consommation moyenne.
+                with conn_coordo.engine.connect() as conn:
+                    conso_energie:pd.DataFrame = pd.read_sql("SELECT equipement_pilote_type_id, consommation FROM equipement_pilote_consommation_moyenne"
+                            , con = conn)
+                #cumul_enr_24h correspond à l'indicateur final qu'on initialise à 0
+                cumul_enr_24h = 0
+                #On l'incrémente avec pour chaque ligne des tableaux continus et discontinus nb de machines d'un type * moyenne de l'énergie consommée par ce type de machine 
+                for i in coeffs_discontinu.index:
+                    for j in conso_energie.index:
+                        if coeffs_discontinu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
+                            cumul_enr_24h += coeffs_discontinu.loc[i]['count'] * conso_energie.loc[j]['consommation']
+                for i in coeffs_continu.index:
+                    for j in conso_energie.index:
+                        if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
+                            cumul_enr_24h += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
+                print ("Enr placée 24h : ", cumul_enr_24h)
+
+        #Calcul de la consommation moyenne d'énergie des foyers
+        #On récupère les données du Zabbix
+        try:
+            zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+            zapi.login("liana", "b6!8Lw7DMbC7khUC")
+            print(f"Connection to Zabbix server successful")
+        except Exception as ex:
+            print("Connection to Zabbix server could not be made due to the following error: \n", ex)
     
-    #Puis par une échelle de temps cohérente --> voir avec Elias ?
+        print ("DEBUT TEST")
+        for h in zapi.host.get(output="extend"):
+            print(h['hostid'])
+        print ("FIN TEST")
+        puissance_foy_24h = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [45201], output = "extend", limit = 1440):
+            print(i['value'])
+            puissance_foy_24h += i['value']
+        print("Puissance foyers 24h : ", puissance_foy_24h)
+        
+        #history = zapi.history.get(hostids = [10084], itemids = [45201]) #on peut ajouter des paramètres pour un time from et time till vrai id : 44136
+        #print ("History : ", history)
+        #On met les données récupérées dans un dataframe pour pouvoir les manipuler
+        #conso_foy = pd.DataFrame(history)
+        #print("Conso foyers : ", conso_foy)
+        #Requête SQL simple pour juste sommer toutes les consommations
+        #query_somme = "SELECT SUM(value) FROM conso_foy"
+        #test_somme = sqldf(query_somme)
+        #print("TEST ULTIME : ", test_somme)
+        #Il faudrait la diviser par le nombre de compteurs linky dispos (il y a surement une liste quelque part dans la bdd)
+        with conn_coordo.engine.connect() as conn:
+            nb_compteurs:int = pd.read_sql ("SELECT COUNT(*) FROM equipement_mesure_compteur_electrique", con = conn)
+        print("Compteurs : ", nb_compteurs)
+        
+        puissance_en_Wh = puissance_foy_24h*24 #W en Wh
+        cumul_en_Wh = cumul_enr_24h/1000 #kWh en Wh
+        pourcentage_enr_conso_placee = 100*(cumul_en_Wh/puissance_en_Wh)
+        print("Pourcentage de l'enr conso placée : ", pourcentage_enr_conso_placee)
     
+        #Puis par une échelle de temps cohérente --> 24h glissantes
+        return
+        
+    def pourcentage_autoconso() -> int:
+        # Pour l'instant on ne va calculer que la quantité d'énergie produite (qui ne sera à terme que le dénominateur)
+        # On va sommer les 6 indicateurs touchant à la production (3 éoliennes et 3 solaires) sur les dernières 24h (en Watts)
+        # Si à terme il y a un nouvel indicateur qui s'ajoute pour un nouveau moyen de production (pour de la méthanisation par exemple)
+        # il faudra rajouter une boucle for en remplaçant simplement l'itemids qui correspond à l'id dans le zabbix.
+        # S'il s'agit d'un numérique non signé et non d'un nunmérique flottant comme tous les autres, il faudra également enlever le history = 0.
+        
+        #Connection au Zabbix
+        try:
+            zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+            zapi.login("liana", "b6!8Lw7DMbC7khUC")
+            print(f"Connection to Zabbix server successful")
+        except Exception as ex:
+            print("Connection to Zabbix server could not be made due to the following error: \n", ex)
+        
+        #On initialise la production à 0 pour l'incrémenter en bouclant sur chaque indic de production du Zabbix
+        prod_enr = 0
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 60 * 24)
+        for i in zapi.history.get(hostids = [10084], itemids = [42882], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #ETLS_Puissance_solaire_ES1
+        for i in zapi.history.get(hostids = [10084], itemids = [43112], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #ETLS_Puissance_solaire_ES2
+        for i in zapi.history.get(hostids = [10084], itemids = [45200], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #ETLS_Puissance_solaire_ES3
+        for i in zapi.history.get(hostids = [10084], itemids = [42868], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #ISW_Puissance_eolienne
+        for i in zapi.history.get(hostids = [10084], itemids = [42833], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #BGW_Puissance_eolienne
+        for i in zapi.history.get(hostids = [10084], itemids = [42869], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #TLV_Puissance_eolienne
+        return prod_enr
     
+    print("\n DEBUT pourcentage_autoconso")
+    pourcentage_autoconso()
+    print("FIN pourcentage_autoconso \n")
     
     #Encapsulation dans un csv
     filename = f"indics-{nowstr}.csv"
@@ -295,14 +394,12 @@ async def main():
     print(res1)
     fichier.write("\"Zabbix server\" Nombre_appareils_connectes_test " + res1 + "\n")
     
-    print("DEBUT TEST")
     pourcentage_app = pourcentage_app_lancés_24h()
     df2 = pd.DataFrame(pourcentage_app)
     print(df2)
     res2 = df2.to_string(header=False, index=False)
     print(res2)
     fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h_test " + res2 + "\n")
-    print("FIN TEST")
     
     cumul_ener = [cumul_enr()]
     df_cumul = pd.DataFrame(cumul_ener)

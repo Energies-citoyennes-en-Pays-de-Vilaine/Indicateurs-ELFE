@@ -51,14 +51,14 @@ async def main():
         pourcentage_app_lancés_24h = round(pourcentage_app_lancés_24h, 1)
         return pourcentage_app_lancés_24h
     
-    #Calcul du cumul de kW d'énergie placés par l'EMS depuis le début du projet
+    #Calcul du cumul des kW d'énergie placés par l'EMS depuis le début du projet
     def cumul_enr() -> int:
         with conn_sortie.engine.connect() as conn:
             #On fabrique deux tables sous la forme machine_type | nombre de lancements
             #1e table pour les machines discoutinues : on compte chaque lancement
             coeffs_discontinu:pd.DataFrame = pd.read_sql("SELECT machine_type, COUNT(*) FROM result\
                                                 WHERE decisions_0 = 1\
-                                                AND machine_type IN (111)\
+                                                AND machine_type IN (111, 112, 113, 221, 225, 515)\
                                             GROUP BY machine_type"
                                     , con = conn) #Compléter les machines_type
             #2e table pour les machines continues : si pas de arrêt / relance, on compte un lancement par jour
@@ -67,7 +67,7 @@ async def main():
                                                             (SELECT DISTINCT * FROM 
                                                                 (SELECT first_valid_timestamp/86400 AS day, machine_id, machine_type FROM 
                                                                         result WHERE decisions_0 = 1) AS T1) AS T2
-                                                                        GROUP BY machine_type) AS T3 WHERE machine_type IN (131)"""
+                                                                        GROUP BY machine_type) AS T3 WHERE machine_type IN (131, 151, 155, -1)"""
                                     , con = conn) #Compléter les machines_type
 
             #On récupère la table machine_type | consommation moyenne.
