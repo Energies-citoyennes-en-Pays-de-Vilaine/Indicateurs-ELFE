@@ -17,12 +17,14 @@ path = os.path.dirname(sys.executable)
 now = datetime.now()
 nowstr = now.strftime("%d%m%Y")
 
+"""
 #Enabling debug logging for the pyzabbix API
 stream = logging.StreamHandler(sys.stdout)
 stream.setLevel(logging.DEBUG)
 log = logging.getLogger('pyzabbix')
 log.addHandler(stream)
 log.setLevel(logging.DEBUG)
+"""
 
 async def main():
     
@@ -271,7 +273,6 @@ async def main():
                                                     AND first_valid_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)\
                                                 GROUP BY machine_type"
                                         , con = conn) #Compléter les machines_type
-                print("Coeffs discontinus : " , coeffs_discontinu)
                 #2e table pour les machines continues : si pas de arrêt / relance, on compte un lancement pour les dernières 24h
                 coeffs_continu:pd.DataFrame = pd.read_sql("""SELECT * FROM 
                                                             (SELECT machine_type, COUNT(*) FROM 
@@ -282,7 +283,6 @@ async def main():
                                                                             GROUP BY machine_type) AS T3 WHERE machine_type IN (131)
                                                                             """
                                         , con = conn) #Compléter les machines_type
-                print("Coeffs continus : ", coeffs_continu)
 
                 #On récupère la table machine_type | consommation moyenne.
                 with conn_coordo.engine.connect() as conn:
@@ -301,112 +301,163 @@ async def main():
                             cumul_enr_24h += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
                 print ("Enr placée 24h : ", cumul_enr_24h)
 
-        #Calcul de la consommation moyenne d'énergie des foyers
-        #On récupère les données du Zabbix
-        try:
-            zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-            zapi.login("liana", "b6!8Lw7DMbC7khUC")
-            print(f"Connection to Zabbix server successful")
-        except Exception as ex:
-            print("Connection to Zabbix server could not be made due to the following error: \n", ex)
-    
-        print ("DEBUT TEST")
-        for h in zapi.host.get(output="extend"):
-            print(h['hostid'])
-        print ("FIN TEST")
-        puissance_foy_24h = 0
-        for i in zapi.history.get(hostids = [10084], itemids = [45201], output = "extend", limit = 1440):
-            print(i['value'])
-            puissance_foy_24h += i['value']
-        print("Puissance foyers 24h : ", puissance_foy_24h)
+        #Calcul de la consommation d'énergie des foyers sur les dernières 24h
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
         
-        #history = zapi.history.get(hostids = [10084], itemids = [45201]) #on peut ajouter des paramètres pour un time from et time till vrai id : 44136
-        #print ("History : ", history)
-        #On met les données récupérées dans un dataframe pour pouvoir les manipuler
-        #conso_foy = pd.DataFrame(history)
-        #print("Conso foyers : ", conso_foy)
-        #Requête SQL simple pour juste sommer toutes les consommations
-        #query_somme = "SELECT SUM(value) FROM conso_foy"
-        #test_somme = sqldf(query_somme)
-        #print("TEST ULTIME : ", test_somme)
-        #Il faudrait la diviser par le nombre de compteurs linky dispos (il y a surement une liste quelque part dans la bdd)
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 60 * 24)
+        puissance_res_24h = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [44136], time_from = tf, time_till = tt, output = "extend", limit = 1440):
+            puissance_res_24h += int(i['value'])
+        moy_puissance_res_24h = puissance_res_24h/25
+        puissance_eco_24h = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [44135], time_from = tf, time_till = tt, output = "extend", limit = 1440):
+            puissance_eco_24h += int(i['value'])
+        moy_puissance_eco_24h = puissance_eco_24h/3
+        print("Puissance foyers 24h : ", puissance_res_24h)
+        print("Moyenne foyers 24h : ", moy_puissance_res_24h)
+        print("Puissance eco 24h : ", puissance_eco_24h)
+        print("Moyenne eco 24h : ", moy_puissance_eco_24h)
+        
+        #Inutile pour l'instant, mais division en dur pas ouf
         with conn_coordo.engine.connect() as conn:
             nb_compteurs:int = pd.read_sql ("SELECT COUNT(*) FROM equipement_mesure_compteur_electrique", con = conn)
         print("Compteurs : ", nb_compteurs)
-        
-        puissance_en_Wh = puissance_foy_24h*24 #W en Wh
-        cumul_en_Wh = cumul_enr_24h/1000 #kWh en Wh
+        #Puis par une échelle de temps cohérente --> 24h glissantes
+
+        #Conversion de tout en Wh avant de faire le pourcentage
+        # On ne considère que la puissance_res car c'est actuellement les seuls à placer leur énergie
+        puissance_en_Wh = moy_puissance_res_24h*24 #W en Wh
+        cumul_en_Wh = cumul_enr_24h*1000 #kWh en Wh
         pourcentage_enr_conso_placee = 100*(cumul_en_Wh/puissance_en_Wh)
         print("Pourcentage de l'enr conso placée : ", pourcentage_enr_conso_placee)
-    
-        #Puis par une échelle de temps cohérente --> 24h glissantes
-        return
+        return pourcentage_enr_conso_placee
         
     def pourcentage_autoconso() -> int:
         # Pour l'instant on ne va calculer que la quantité d'énergie produite (qui ne sera à terme que le dénominateur)
-        # On va sommer les 6 indicateurs touchant à la production (3 éoliennes et 3 solaires) sur les dernières 24h (en Watts)
-        # Si à terme il y a un nouvel indicateur qui s'ajoute pour un nouveau moyen de production (pour de la méthanisation par exemple)
-        # il faudra rajouter une boucle for en remplaçant simplement l'itemids qui correspond à l'id dans le zabbix.
-        # S'il s'agit d'un numérique non signé et non d'un nunmérique flottant comme tous les autres, il faudra également enlever le history = 0.
+        # On va sommer les 3 indicateurs sommant la production (éolien, solaire, méthanisation) sur les dernières 24h (en Watts)
         
         #Connection au Zabbix
-        try:
-            zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-            zapi.login("liana", "b6!8Lw7DMbC7khUC")
-            print(f"Connection to Zabbix server successful")
-        except Exception as ex:
-            print("Connection to Zabbix server could not be made due to the following error: \n", ex)
-        
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")        
         #On initialise la production à 0 pour l'incrémenter en bouclant sur chaque indic de production du Zabbix
         prod_enr = 0
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 60 * 24)
-        for i in zapi.history.get(hostids = [10084], itemids = [42882], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #ETLS_Puissance_solaire_ES1
-        for i in zapi.history.get(hostids = [10084], itemids = [43112], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #ETLS_Puissance_solaire_ES2
-        for i in zapi.history.get(hostids = [10084], itemids = [45200], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #ETLS_Puissance_solaire_ES3
-        for i in zapi.history.get(hostids = [10084], itemids = [42868], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #ISW_Puissance_eolienne
-        for i in zapi.history.get(hostids = [10084], itemids = [42833], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #BGW_Puissance_eolienne
-        for i in zapi.history.get(hostids = [10084], itemids = [42869], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #TLV_Puissance_eolienne
+        for i in zapi.history.get(hostids = [10084], itemids = [45198], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_solaire
+        for i in zapi.history.get(hostids = [10084], itemids = [45197], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_eolienne
+        for i in zapi.history.get(hostids = [10084], itemids = [45248], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_methanisation
         return prod_enr
     
-    print("\n DEBUT pourcentage_autoconso")
-    pourcentage_autoconso()
-    print("FIN pourcentage_autoconso \n")
+    def part_eolien_prod_15min() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 15)
+        #Production totale d'enr sur le dernier 1/4h
+        prod_enr = 0
+        #Production d'éolien sur le dernier 1/4h
+        puissance_eolien = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [45198], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_solaire
+        for i in zapi.history.get(hostids = [10084], itemids = [45248], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_methanisation
+        for i in zapi.history.get(hostids = [10084], itemids = [45197], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_eolienne
+            puissance_eolien += int(i['value'])
+        #Calcul du pourcentage
+        pourcentage_prod_eolien = 100*puissance_eolien/prod_enr
+        return int(pourcentage_prod_eolien)
+    
+    def part_solaire_prod_15min() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 15)
+        #Production totale d'enr sur le dernier 1/4h
+        prod_enr = 0
+        #Production de solaire sur le dernier 1/4h
+        puissance_solaire = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [45198], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_solaire
+            puissance_solaire += int(i['value'])
+        for i in zapi.history.get(hostids = [10084], itemids = [45248], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_methanisation
+        for i in zapi.history.get(hostids = [10084], itemids = [45197], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_eolienne
+        #Calcul du pourcentage
+        pourcentage_prod_solaire = 100*puissance_solaire/prod_enr
+        return int(pourcentage_prod_solaire)
+    
+    def part_metha_prod_15min() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 15)
+        #Production totale d'enr sur le dernier 1/4h
+        prod_enr = 0
+        #Production de metha sur le dernier 1/4h
+        puissance_metha = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [45198], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_solaire
+        for i in zapi.history.get(hostids = [10084], itemids = [45248], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_methanisation
+            puissance_metha += int(i['value'])
+        for i in zapi.history.get(hostids = [10084], itemids = [45197], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            prod_enr += int(i['value']) #Prod_eolienne
+        #Calcul du pourcentage
+        pourcentage_prod_metha = 100*puissance_metha/prod_enr
+        return int(pourcentage_prod_metha)
+    
+    print("\n DEBUT")
+    print("Eolien : ", part_eolien_prod_15min())
+    print("Solaire : ", part_solaire_prod_15min())
+    print("Metha : ", part_metha_prod_15min())
+    print("FIN \n")
     
     #Encapsulation dans un csv
     filename = f"indics-{nowstr}.csv"
     finalpath = os.path.join(path, filename)
     print("Path : ", finalpath)
-    #fichier = open(finalpath, "w")
-    #/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/indics.csv
     fichier = open(f"/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/indics.csv", "w")
     
     appconn = indic_appareils_connectes()
-    df1 = pd.DataFrame(appconn)
-    print(df1)    
+    df1 = pd.DataFrame(appconn)    
     res1 = df1.to_string (header=False, index = False)
-    print(res1)
     fichier.write("\"Zabbix server\" Nombre_appareils_connectes_test " + res1 + "\n")
     
     pourcentage_app = pourcentage_app_lancés_24h()
     df2 = pd.DataFrame(pourcentage_app)
-    print(df2)
     res2 = df2.to_string(header=False, index=False)
-    print(res2)
     fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h_test " + res2 + "\n")
     
     cumul_ener = [cumul_enr()]
     df_cumul = pd.DataFrame(cumul_ener)
-    print(df_cumul)
     res_cumul = df_cumul.to_string(header=False, index=False)
-    print(res_cumul)
     fichier.write("\"Zabbix server\" Cumul_energie_placee_test " + res_cumul + "\n")
+    
+    part_eol = [part_eolien_prod_15min()]
+    df_eol = pd.DataFrame(part_eol)
+    res_eol = df_eol.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Part_eolien_prod " + res_eol + "\n")
+    
+    part_sol = [part_solaire_prod_15min()]
+    df_sol = pd.DataFrame(part_sol)
+    res_sol = df_sol.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Part_solaire_prod " + res_sol + "\n")
+    
+    part_meth = [part_metha_prod_15min()]
+    df_meth = pd.DataFrame(part_meth)
+    res_meth = df_meth.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Part_metha_prod " + res_meth + "\n")
         
     #Connection au Zabbix
     try:
