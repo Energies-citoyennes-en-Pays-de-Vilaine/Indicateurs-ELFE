@@ -285,25 +285,49 @@ async def main():
         pourcentage_enr_conso_placee = int(100*(cumul_enr_placee_24h/puissance_panel_mae))
         return pourcentage_enr_conso_placee
         
-    def pourcentage_autoconso() -> int:
-        # Pour l'instant on ne va calculer que la quantité d'énergie produite (qui ne sera à terme que le dénominateur)
-        # On va sommer les 3 indicateurs sommant la production (éolien, solaire, méthanisation) sur les dernières 24h (en Watts)
-        
+    def cumul_enr_autoconso() -> int:
         #Connection au Zabbix
         zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")        
-        #On initialise la production à 0 pour l'incrémenter en bouclant sur chaque indic de production du Zabbix
-        prod_enr = 0
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = 1635751596 #Correspond au 1er novembre 2021
+        #Calcul de la production mise à l'échelle sur l'heure (en Wh)
+        enr_prod_mae = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            enr_prod_mae += int(float(i['value']))*(1/20) #Panel_Prod_puissance_mae : 1 valeur toutes les 3 min
+        #Calcul de la production en surplus à partir de l'équilibre (en Wh)
+        surplus_prod = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [42883], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            if (float(i['value'])>0):
+                surplus_prod += int(float(i['value']))*(1/60) #equilibre_general_p_c : 1 valeur par minute
+        #Calcul de l'enr produite et consommée sur le territoire
+        cumul_autoconso = int(enr_prod_mae - surplus_prod)
+        return cumul_autoconso
+    
+    def pourcentage_autoconso_30j() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 60 * 24 * 30.5)
+        #Calcul de l'enr produite et consommée sur le territoire le mois dernier
+        enr_prod_mae = 0 #Production mise à l'échelle sur l'heure (en Wh)
+        for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            enr_prod_mae += int(float(i['value']))*(1/20)
+        surplus_prod = 0 #Production en surplus à partir de l'équilibre (en Wh)
+        for i in zapi.history.get(hostids = [10084], itemids = [42883], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            if (float(i['value'])>0):
+                surplus_prod += int(float(i['value']))*(1/60)
+        enr_prod_et_conso = int(enr_prod_mae - surplus_prod) #Enr produite et consommée sur le territoire
+        #Calcul de la production mise à l'échelle du panel le mois dernier
+        enr_prod = 0
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 60 * 24)
-        #TODO : remplacer par panel_prod_puissance_mae pour que ce soit mis à l'échelle
-        for i in zapi.history.get(hostids = [10084], itemids = [45198], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #Prod_solaire
-        for i in zapi.history.get(hostids = [10084], itemids = [45197], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #Prod_eolienne
-        for i in zapi.history.get(hostids = [10084], itemids = [45248], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            prod_enr += int(i['value']) #Prod_methanisation
-        return prod_enr
+        for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            enr_prod += int(float(i['value'])) #Panel_Prod_puissance_mae
+        #Calcul du pourcentage d'autoconsommation
+        pourcentage_autoconso = int(100 * (enr_prod_et_conso/enr_prod))
+        return pourcentage_autoconso
     
     def part_eolien_prod_15min() -> int:
         #Connection au Zabbix
@@ -369,7 +393,7 @@ async def main():
         return int(pourcentage_prod_metha)
     
     print("\n DEBUT")
-    conso_enr_placee()
+    pourcentage_autoconso_30j()
     print("FIN \n")
     
     #Encapsulation dans un csv
