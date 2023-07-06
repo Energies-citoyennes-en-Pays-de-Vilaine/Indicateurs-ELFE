@@ -422,6 +422,16 @@ async def main():
     res_conso = df_conso.to_string(header=False, index=False)
     fichier.write("\"Zabbix server\" Pourcentage_energie_consommee_placee_test " + res_conso + "\n")
     
+    cumul_ener_autoconso = [cumul_enr_autoconso()]
+    df_cautoconso = pd.DataFrame(cumul_ener_autoconso)
+    res_cautoconso = df_cautoconso.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Energie_autoconsommee_test " + res_cautoconso + "\n")
+    
+    pourcentage_autoconso = [pourcentage_autoconso_30j()]
+    df_pautoconso = pd.DataFrame(pourcentage_autoconso)
+    res_pautoconso = df_pautoconso.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Pourcentage_autoconsommation_test " + res_pautoconso + "\n")
+    
     part_eol = [part_eolien_prod_15min()]
     df_eol = pd.DataFrame(part_eol)
     res_eol = df_eol.to_string(header=False, index=False)
@@ -468,6 +478,20 @@ async def main():
     try:
         m_conso = zb.Measurement(zab.host, "Pourcentage_energie_consommee_placee_test", res_conso)
         zab.measurements.add_measurement(m_conso)
+        print(f"Creation of the measurement and adding made successfully.")
+    except Exception as ex:
+        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
+    
+    try:
+        m_cautoconso = zb.Measurement(zab.host, "Energie_autoconsommee_test", res_cautoconso)
+        zab.measurements.add_measurement(m_cautoconso)
+        print(f"Creation of the measurement and adding made successfully.")
+    except Exception as ex:
+        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
+    
+    try:
+        m_pautoconso = zb.Measurement(zab.host, "Pourcentage_autoconsommation_test", res_pautoconso)
+        zab.measurements.add_measurement(m_pautoconso)
         print(f"Creation of the measurement and adding made successfully.")
     except Exception as ex:
         print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
