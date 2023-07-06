@@ -89,6 +89,29 @@ async def main():
                         cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
             return int(cumul_enr)
         
+    #Calcul du pourcentage de la conso d'énergie des foyers placée
+    def conso_enr_placee() -> int:
+        #On commence par calculer la quantité d'énergie placée dans les dernières 24h
+        with conn_sortie.engine.connect() as conn:
+            #On fabrique deux tables sous la forme machine_type | nombre de lancements
+            cumul_enr_placee_24h:pd.DataFrame = pd.read_sql(""" SELECT SUM((0.25)*(p_c_with_flexible_consumption.power - p_c_without_flexible_consumption.power)) FROM p_c_with_flexible_consumption
+                                                        INNER JOIN p_c_without_flexible_consumption
+                                                        USING(data_timestamp)
+                                                        WHERE p_c_with_flexible_consumption.data_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400) """
+                            , con = conn)
+            cumul_enr_placee_24h = -cumul_enr_placee_24h
+        cumul_enr_placee_24h = int(cumul_enr_placee_24h.loc[0]['sum'])
+        #Calcul de la consommation d'énergie du panel mis à l'échelle les dernières 24h (item Panel_R_puissance_mae dans Zabbix)
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 60 * 24)
+        puissance_panel_mae = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [44968], time_from = tf, time_till = tt, output = "extend", limit = 1440, history = 0):
+            puissance_panel_mae += int(float(i['value'])) * (1/60) #Panel_R_puissance_mae
+        pourcentage_enr_conso_placee = int(100*(cumul_enr_placee_24h/puissance_panel_mae))
+        return pourcentage_enr_conso_placee
+    
     def part_eolien_prod_15min() -> int:
         #Connection au Zabbix
         zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
@@ -175,6 +198,11 @@ async def main():
     res_cumul = df_cumul.to_string(header=False, index=False)
     fichier.write("\"Zabbix server\" Cumul_energie_placee " + res_cumul + "\n")
     
+    conso_ener_placee = [conso_enr_placee()]
+    df_conso = pd.DataFrame(conso_ener_placee)
+    res_conso = df_conso.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Pourcentage_energie_consommee_placee " + res_conso + "\n")
+    
     part_eol = [part_eolien_prod_15min()]
     df_eol = pd.DataFrame(part_eol)
     res_eol = df_eol.to_string(header=False, index=False)
@@ -202,6 +230,9 @@ async def main():
     
     m_cumul = zb.Measurement(zab.host, "Cumul_energie_placee", res_cumul)
     zab.measurements.add_measurement(m_cumul)
+    
+    m_conso = zb.Measurement(zab.host, "Pourcentage_energie_consommee_placee", res_conso)
+    zab.measurements.add_measurement(m_conso)
     
     m_eol = zb.Measurement(zab.host, "Part_eolien_prod", res_eol)
     zab.measurements.add_measurement(m_eol)
