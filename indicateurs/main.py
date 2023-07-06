@@ -174,7 +174,7 @@ async def main():
                 for j in conso_energie.index:
                     if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
                         cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
-            return int(cumul_enr)
+            return int(cumul_enr*1000)
                 
             
         """
@@ -265,74 +265,24 @@ async def main():
     def conso_enr_placee() -> int:
         #On commence par calculer la quantité d'énergie placée dans les dernières 24h
         with conn_sortie.engine.connect() as conn:
-                #On fabrique deux tables sous la forme machine_type | nombre de lancements
-                #1e table pour les machines discoutinues : on compte chaque lancement
-                coeffs_discontinu:pd.DataFrame = pd.read_sql("SELECT machine_type, COUNT(*) FROM result\
-                                                    WHERE decisions_0 = 1\
-                                                    AND machine_type IN (111)\
-                                                    AND first_valid_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)\
-                                                GROUP BY machine_type"
-                                        , con = conn) #Compléter les machines_type
-                #2e table pour les machines continues : si pas de arrêt / relance, on compte un lancement pour les dernières 24h
-                coeffs_continu:pd.DataFrame = pd.read_sql("""SELECT * FROM 
-                                                            (SELECT machine_type, COUNT(*) FROM 
-                                                                (SELECT DISTINCT * FROM 
-                                                                    (SELECT machine_id, machine_type FROM result
-                                                                            WHERE first_valid_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)
-                                                                            AND decisions_0 = 1) AS T1) AS T2
-                                                                            GROUP BY machine_type) AS T3 WHERE machine_type IN (131)
-                                                                            """
-                                        , con = conn) #Compléter les machines_type
-
-                #On récupère la table machine_type | consommation moyenne.
-                with conn_coordo.engine.connect() as conn:
-                    conso_energie:pd.DataFrame = pd.read_sql("SELECT equipement_pilote_type_id, consommation FROM equipement_pilote_consommation_moyenne"
+            #On fabrique deux tables sous la forme machine_type | nombre de lancements
+            cumul_enr_placee_24h:pd.DataFrame = pd.read_sql(""" SELECT SUM((0.25)*(p_c_with_flexible_consumption.power - p_c_without_flexible_consumption.power)) FROM p_c_with_flexible_consumption
+                                                        INNER JOIN p_c_without_flexible_consumption
+                                                        USING(data_timestamp)
+                                                        WHERE p_c_with_flexible_consumption.data_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400) """
                             , con = conn)
-                #cumul_enr_24h correspond à l'indicateur final qu'on initialise à 0
-                cumul_enr_24h = 0
-                #On l'incrémente avec pour chaque ligne des tableaux continus et discontinus nb de machines d'un type * moyenne de l'énergie consommée par ce type de machine 
-                for i in coeffs_discontinu.index:
-                    for j in conso_energie.index:
-                        if coeffs_discontinu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
-                            cumul_enr_24h += coeffs_discontinu.loc[i]['count'] * conso_energie.loc[j]['consommation']
-                for i in coeffs_continu.index:
-                    for j in conso_energie.index:
-                        if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
-                            cumul_enr_24h += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
-                print ("Enr placée 24h : ", cumul_enr_24h)
-
-        #Calcul de la consommation d'énergie des foyers sur les dernières 24h
-        #Connection au Zabbix
+            cumul_enr_placee_24h = -cumul_enr_placee_24h
+        cumul_enr_placee_24h = int(cumul_enr_placee_24h.loc[0]['sum'])
+        print ("Enr placée 24h : ", cumul_enr_placee_24h)
+        #Calcul de la consommation d'énergie du panel mis à l'échelle les dernières 24h (item Panel_R_puissance_mae dans Zabbix)
         zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
         zapi.login("liana", "b6!8Lw7DMbC7khUC")
-        
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 60 * 24)
-        puissance_res_24h = 0
-        for i in zapi.history.get(hostids = [10084], itemids = [44136], time_from = tf, time_till = tt, output = "extend", limit = 1440):
-            puissance_res_24h += int(i['value'])
-        moy_puissance_res_24h = puissance_res_24h/25
-        puissance_eco_24h = 0
-        for i in zapi.history.get(hostids = [10084], itemids = [44135], time_from = tf, time_till = tt, output = "extend", limit = 1440):
-            puissance_eco_24h += int(i['value'])
-        moy_puissance_eco_24h = puissance_eco_24h/3
-        print("Puissance foyers 24h : ", puissance_res_24h)
-        print("Moyenne foyers 24h : ", moy_puissance_res_24h)
-        print("Puissance eco 24h : ", puissance_eco_24h)
-        print("Moyenne eco 24h : ", moy_puissance_eco_24h)
-        
-        #Inutile pour l'instant, mais division en dur pas ouf
-        with conn_coordo.engine.connect() as conn:
-            nb_compteurs:int = pd.read_sql ("SELECT COUNT(*) FROM equipement_mesure_compteur_electrique", con = conn)
-        print("Compteurs : ", nb_compteurs)
-        #Puis par une échelle de temps cohérente --> 24h glissantes
-
-        #Conversion de tout en Wh avant de faire le pourcentage
-        # On ne considère que la puissance_res car c'est actuellement les seuls à placer leur énergie
-        puissance_en_Wh = moy_puissance_res_24h*24 #W en Wh
-        cumul_en_Wh = cumul_enr_24h*1000 #kWh en Wh
-        pourcentage_enr_conso_placee = 100*(cumul_en_Wh/puissance_en_Wh)
-        print("Pourcentage de l'enr conso placée : ", pourcentage_enr_conso_placee)
+        puissance_panel_mae = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [44968], time_from = tf, time_till = tt, output = "extend", limit = 1440, history = 0):
+            puissance_panel_mae += int(float(i['value'])) * (1/60) #Panel_R_puissance_mae
+        pourcentage_enr_conso_placee = int(100*(cumul_enr_placee_24h/puissance_panel_mae))
         return pourcentage_enr_conso_placee
         
     def pourcentage_autoconso() -> int:
@@ -346,6 +296,7 @@ async def main():
         prod_enr = 0
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 60 * 24)
+        #TODO : remplacer par panel_prod_puissance_mae pour que ce soit mis à l'échelle
         for i in zapi.history.get(hostids = [10084], itemids = [45198], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
             prod_enr += int(i['value']) #Prod_solaire
         for i in zapi.history.get(hostids = [10084], itemids = [45197], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
@@ -418,9 +369,7 @@ async def main():
         return int(pourcentage_prod_metha)
     
     print("\n DEBUT")
-    print("Eolien : ", part_eolien_prod_15min())
-    print("Solaire : ", part_solaire_prod_15min())
-    print("Metha : ", part_metha_prod_15min())
+    conso_enr_placee()
     print("FIN \n")
     
     #Encapsulation dans un csv
@@ -444,6 +393,11 @@ async def main():
     res_cumul = df_cumul.to_string(header=False, index=False)
     fichier.write("\"Zabbix server\" Cumul_energie_placee_test " + res_cumul + "\n")
     
+    conso_ener_placee = [conso_enr_placee()]
+    df_conso = pd.DataFrame(conso_ener_placee)
+    res_conso = df_conso.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Pourcentage_energie_consommee_placee_test " + res_conso + "\n")
+    
     part_eol = [part_eolien_prod_15min()]
     df_eol = pd.DataFrame(part_eol)
     res_eol = df_eol.to_string(header=False, index=False)
@@ -465,7 +419,7 @@ async def main():
         print(f"Connection to Zabbix made successfully.")
     except Exception as ex:
         print("Connection to Zabbix could not be made due to the following error: \n", ex)
-    
+        
     try:
         m1 = zb.Measurement(zab.host, "Nombre_appareils_connectes_test", res1)
         zab.measurements.add_measurement(m1)
@@ -473,7 +427,6 @@ async def main():
     except Exception as ex:
         print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
         
-    
     try:
         m2 = zb.Measurement(zab.host, "Pourcentage_app_lances_24h_test", res2)
         zab.measurements.add_measurement(m2)
@@ -484,6 +437,13 @@ async def main():
     try:
         m_cumul = zb.Measurement(zab.host, "Cumul_energie_placee_test", res_cumul)
         zab.measurements.add_measurement(m_cumul)
+        print(f"Creation of the measurement and adding made successfully.")
+    except Exception as ex:
+        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
+        
+    try:
+        m_conso = zb.Measurement(zab.host, "Pourcentage_energie_consommee_placee_test", res_conso)
+        zab.measurements.add_measurement(m_conso)
         print(f"Creation of the measurement and adding made successfully.")
     except Exception as ex:
         print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
