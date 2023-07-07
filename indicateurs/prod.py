@@ -112,6 +112,25 @@ async def main():
         pourcentage_enr_conso_placee = int(100*(cumul_enr_placee_24h/puissance_panel_mae))
         return pourcentage_enr_conso_placee
     
+    def cumul_enr_autoconso() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = 1667287596
+        #Calcul de la production mise à l'échelle sur l'heure (en Wh)
+        enr_prod_mae = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            enr_prod_mae += int(float(i['value']))*(1/20) #Panel_Prod_puissance_mae : 1 valeur toutes les 3 min
+        #Calcul de la production en surplus à partir de l'équilibre (en Wh)
+        surplus_prod = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [42883], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            if (float(i['value'])>0):
+                surplus_prod += int(float(i['value']))*(1/60) #equilibre_general_p_c : 1 valeur par minute
+        #Calcul de l'enr produite et consommée sur le territoire
+        cumul_autoconso = int(enr_prod_mae - surplus_prod)
+        return cumul_autoconso
+    
     def part_eolien_prod_15min() -> int:
         #Connection au Zabbix
         zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
