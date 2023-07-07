@@ -60,17 +60,19 @@ async def main():
             #1e table pour les machines discoutinues : on compte chaque lancement
             coeffs_discontinu:pd.DataFrame = pd.read_sql("SELECT machine_type, COUNT(*) FROM result\
                                                 WHERE decisions_0 = 1\
-                                                AND machine_type IN (111, 112, 113, 221, 225, 515)\
+                                                AND machine_type IN (111)\
                                             GROUP BY machine_type"
                                     , con = conn) #Compléter les machines_type
+            print("Coeffs discontinus : " , coeffs_discontinu)
             #2e table pour les machines continues : si pas de arrêt / relance, on compte un lancement par jour
             coeffs_continu:pd.DataFrame = pd.read_sql("""SELECT * FROM 
                                                         (SELECT machine_type, COUNT(*) FROM 
                                                             (SELECT DISTINCT * FROM 
                                                                 (SELECT first_valid_timestamp/86400 AS day, machine_id, machine_type FROM 
                                                                         result WHERE decisions_0 = 1) AS T1) AS T2
-                                                                        GROUP BY machine_type) AS T3 WHERE machine_type IN (131, 151, 155, -1)"""
+                                                                        GROUP BY machine_type) AS T3 WHERE machine_type IN (131)"""
                                     , con = conn) #Compléter les machines_type
+            print("Coeffs continus : ", coeffs_continu)
 
             #On récupère la table machine_type | consommation moyenne.
             with conn_coordo.engine.connect() as conn:
@@ -87,7 +89,7 @@ async def main():
                 for j in conso_energie.index:
                     if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
                         cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
-            return int(cumul_enr)
+            return int(cumul_enr*1000)
         
     #Calcul du pourcentage de la conso d'énergie des foyers placée
     def conso_enr_placee() -> int:
@@ -130,6 +132,67 @@ async def main():
         #Calcul de l'enr produite et consommée sur le territoire
         cumul_autoconso = int(enr_prod_mae - surplus_prod)
         return cumul_autoconso
+    
+    def pourcentage_autoconso_30j() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 60 * 24 * 30.5)
+        #Calcul de l'enr produite et consommée sur le territoire le mois dernier
+        enr_prod_mae = 0 #Production mise à l'échelle sur l'heure (en Wh)
+        for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            enr_prod_mae += int(float(i['value']))*(1/20)
+        surplus_prod = 0 #Production en surplus à partir de l'équilibre (en Wh)
+        for i in zapi.history.get(hostids = [10084], itemids = [42883], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            if (float(i['value'])>0):
+                surplus_prod += int(float(i['value']))*(1/60)
+        enr_prod_et_conso = int(enr_prod_mae - surplus_prod) #Enr produite et consommée sur le territoire
+        #Calcul de la production mise à l'échelle du panel le mois dernier
+        enr_prod = 0
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 60 * 24)
+        for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
+            enr_prod += int(float(i['value'])) #Panel_Prod_puissance_mae
+        #Calcul du pourcentage d'autoconsommation
+        pourcentage_autoconso = int(100 * (enr_prod_et_conso/enr_prod))
+        return pourcentage_autoconso
+    
+    def enr_eolien() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 15)
+        #Calcul de l'énergie éolienne des 15 dernières minutes à partir de la puissance
+        enr_eol = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [45197], time_from = tf, time_till = tt, output = "extend", limit = 15, history=0):
+            enr_eol += int(float(i['value']))*(1/60) #Prod_eolienne
+        return int(enr_eol)
+    
+    def enr_solaire() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 15)
+        #Calcul de l'énergie solaire des 15 dernières minutes à partir de la puissance
+        enr_sol = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [45198], time_from = tf, time_till = tt, output = "extend", limit = 15, history=0):
+            enr_sol += int(float(i['value']))*(1/60) #Prod_solaire
+        return int(enr_sol)
+    
+    def enr_metha() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 15)
+        #Calcul de l'énergie métha des 15 dernières minutes à partir de la puissance
+        enr_meth = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [45248], time_from = tf, time_till = tt, output = "extend", limit = 15, history=0):
+            enr_meth += int(float(i['value']))*(1/60) #Prod_methanisation
+        return int(enr_meth)
     
     def part_eolien_prod_15min() -> int:
         #Connection au Zabbix
@@ -222,6 +285,31 @@ async def main():
     res_conso = df_conso.to_string(header=False, index=False)
     fichier.write("\"Zabbix server\" Pourcentage_energie_consommee_placee " + res_conso + "\n")
     
+    cumul_ener_autoconso = [cumul_enr_autoconso()]
+    df_cautoconso = pd.DataFrame(cumul_ener_autoconso)
+    res_cautoconso = df_cautoconso.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Energie_autoconsommee " + res_cautoconso + "\n")
+    
+    pourcentage_autoconso = [pourcentage_autoconso_30j()]
+    df_pautoconso = pd.DataFrame(pourcentage_autoconso)
+    res_pautoconso = df_pautoconso.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Pourcentage_autoconsommation " + res_pautoconso + "\n")
+    
+    enr_eol = [enr_eolien()]
+    df_enreol = pd.DataFrame(enr_eol)
+    res_enreol = df_enreol.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Enr_eolienne " + res_enreol + "\n")
+    
+    enr_sol = [enr_solaire()]
+    df_enrsol = pd.DataFrame(enr_sol)
+    res_enrsol = df_enrsol.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Enr_solaire " + res_enrsol + "\n")
+    
+    enr_meth = [enr_metha()]
+    df_enrmeth = pd.DataFrame(enr_meth)
+    res_enrmeth = df_enrmeth.to_string(header=False, index=False)
+    fichier.write("\"Zabbix server\" Enr_methanisation " + res_enrmeth + "\n")
+    
     part_eol = [part_eolien_prod_15min()]
     df_eol = pd.DataFrame(part_eol)
     res_eol = df_eol.to_string(header=False, index=False)
@@ -252,6 +340,21 @@ async def main():
     
     m_conso = zb.Measurement(zab.host, "Pourcentage_energie_consommee_placee", res_conso)
     zab.measurements.add_measurement(m_conso)
+    
+    m_cautoconso = zb.Measurement(zab.host, "Energie_autoconsommee", res_cautoconso)
+    zab.measurements.add_measurement(m_cautoconso)
+    
+    m_pautoconso = zb.Measurement(zab.host, "Pourcentage_autoconsommation", res_pautoconso)
+    zab.measurements.add_measurement(m_pautoconso)
+    
+    m_enreol = zb.Measurement(zab.host, "Enr_eolienne", res_enreol)
+    zab.measurements.add_measurement(m_enreol)
+    
+    m_enrsol = zb.Measurement(zab.host, "Enr_solaire", res_enrsol)
+    zab.measurements.add_measurement(m_enrsol)
+    
+    m_enrmeth = zb.Measurement(zab.host, "Enr_methanisation_test", res_enrmeth)
+    zab.measurements.add_measurement(m_enrmeth)
     
     m_eol = zb.Measurement(zab.host, "Part_eolien_prod", res_eol)
     zab.measurements.add_measurement(m_eol)
