@@ -290,7 +290,7 @@ async def main():
         zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
         zapi.login("liana", "b6!8Lw7DMbC7khUC")
         tt = int(time.mktime(datetime.now().timetuple()))
-        tf = 1635751596 #Correspond au 1er novembre 2021
+        tf = 1667287596
         #Calcul de la production mise à l'échelle sur l'heure (en Wh)
         enr_prod_mae = 0
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
@@ -302,6 +302,30 @@ async def main():
                 surplus_prod += int(float(i['value']))*(1/60) #equilibre_general_p_c : 1 valeur par minute
         #Calcul de l'enr produite et consommée sur le territoire
         cumul_autoconso = int(enr_prod_mae - surplus_prod)
+        return cumul_autoconso
+    
+    def cumul_enr_autoconso_opti() -> int:
+        #Connection au Zabbix
+        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
+        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 14 + 59)
+        #Récupération de la précédente valeur
+        val_prec = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [45255], time_from = tf, time_till = tt-5, output = "extend", limit = 1, history=0):
+            val_prec = int(float(i['value']))
+        #Calcul de la production mise à l'échelle sur l'heure (en Wh)
+        enr_prod_mae = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 5, history=0):
+            enr_prod_mae += int(float(i['value']))*(1/20) #Panel_Prod_puissance_mae : 1 valeur toutes les 3 min
+        #Calcul de la production en surplus à partir de l'équilibre (en Wh)
+        surplus_prod = 0
+        for i in zapi.history.get(hostids = [10084], itemids = [42883], time_from = tf, time_till = tt, output = "extend", limit = 15, history=0):
+            if (float(i['value'])>0):
+                surplus_prod += int(float(i['value']))*(1/60) #equilibre_general_p_c : 1 valeur par minute
+        #Calcul de l'enr produite et consommée sur le territoire
+        cumul_supp = int(enr_prod_mae - surplus_prod)
+        cumul_autoconso = val_prec + cumul_supp
         return cumul_autoconso
     
     def pourcentage_autoconso_30j() -> int:
@@ -393,7 +417,8 @@ async def main():
         return int(pourcentage_prod_metha)
     
     print("\n DEBUT")
-    pourcentage_autoconso_30j()
+    cumul_enr_autoconso()
+    cumul_enr_autoconso_opti()
     print("FIN \n")
     
     #Encapsulation dans un csv
@@ -422,7 +447,7 @@ async def main():
     res_conso = df_conso.to_string(header=False, index=False)
     fichier.write("\"Zabbix server\" Pourcentage_energie_consommee_placee_test " + res_conso + "\n")
     
-    cumul_ener_autoconso = [cumul_enr_autoconso()]
+    cumul_ener_autoconso = [cumul_enr_autoconso_opti()]
     df_cautoconso = pd.DataFrame(cumul_ener_autoconso)
     res_cautoconso = df_cautoconso.to_string(header=False, index=False)
     fichier.write("\"Zabbix server\" Energie_autoconsommee_test " + res_cautoconso + "\n")
