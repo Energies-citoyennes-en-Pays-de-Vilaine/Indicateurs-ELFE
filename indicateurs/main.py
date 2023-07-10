@@ -262,7 +262,7 @@ async def main():
         zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
         zapi.login("liana", "b6!8Lw7DMbC7khUC")
         tt = int(time.mktime(datetime.now().timetuple()))
-        tf = int(tt - 60 * 14 + 59)
+        tf = int(tt - 60 * 60 * 24)
         #Récupération de la précédente valeur
         val_prec = 0
         for i in zapi.history.get(hostids = [10084], itemids = [45255], time_from = tf, time_till = tt-5, output = "extend", limit = 1, history=0):

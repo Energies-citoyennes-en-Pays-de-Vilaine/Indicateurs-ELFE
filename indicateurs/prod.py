@@ -353,7 +353,7 @@ async def main():
     m_enrsol = zb.Measurement(zab.host, "Enr_solaire", res_enrsol)
     zab.measurements.add_measurement(m_enrsol)
     
-    m_enrmeth = zb.Measurement(zab.host, "Enr_methanisation_test", res_enrmeth)
+    m_enrmeth = zb.Measurement(zab.host, "Enr_methanisation", res_enrmeth)
     zab.measurements.add_measurement(m_enrmeth)
     
     m_eol = zb.Measurement(zab.host, "Part_eolien_prod", res_eol)
