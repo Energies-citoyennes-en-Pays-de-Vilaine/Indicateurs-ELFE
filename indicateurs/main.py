@@ -129,6 +129,14 @@ async def main():
     #Calcul du cumul de kW d'énergie placés par l'EMS depuis le début du projet
     def cumul_enr() -> int:
         with conn_sortie.engine.connect() as conn:
+            cumul_enr_placee:pd.DataFrame = pd.read_sql(""" SELECT SUM((0.25)*(p_c_with_flexible_consumption.power - p_c_without_flexible_consumption.power)) FROM p_c_with_flexible_consumption
+                                                        INNER JOIN p_c_without_flexible_consumption
+                                                        USING(data_timestamp) """
+                            , con = conn)
+        cumul_enr_placee = -(cumul_enr_placee/1000)
+        cumul_enr_placee = int(cumul_enr_placee.loc[0]['sum'])
+        print("Nouveau calcul : ", cumul_enr_placee)
+        with conn_sortie.engine.connect() as conn:
             #On fabrique deux tables sous la forme machine_type | nombre de lancements
             #1e table pour les machines discoutinues : on compte chaque lancement
             coeffs_discontinu:pd.DataFrame = pd.read_sql("SELECT machine_type, COUNT(*) FROM result\
@@ -136,7 +144,6 @@ async def main():
                                                 AND machine_type IN (111)\
                                             GROUP BY machine_type"
                                     , con = conn) #Compléter les machines_type
-            print("Coeffs discontinus : " , coeffs_discontinu)
             #2e table pour les machines continues : si pas de arrêt / relance, on compte un lancement par jour
             coeffs_continu:pd.DataFrame = pd.read_sql("""SELECT * FROM 
                                                         (SELECT machine_type, COUNT(*) FROM 
@@ -145,7 +152,6 @@ async def main():
                                                                         result WHERE decisions_0 = 1) AS T1) AS T2
                                                                         GROUP BY machine_type) AS T3 WHERE machine_type IN (131)"""
                                     , con = conn) #Compléter les machines_type
-            print("Coeffs continus : ", coeffs_continu)
             #On récupère la table machine_type | consommation moyenne.
             with conn_coordo.engine.connect() as conn:
                 conso_energie:pd.DataFrame = pd.read_sql("SELECT equipement_pilote_type_id, consommation FROM equipement_pilote_consommation_moyenne"
@@ -161,6 +167,7 @@ async def main():
                 for j in conso_energie.index:
                     if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
                         cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
+            print("Ancien calcul : ", int(cumul_enr/1000))
             return int(cumul_enr/1000)
     
     #Calcul du cumul de kW d'énergie placés par l'EMS depuis le début du projet
@@ -213,7 +220,6 @@ async def main():
                             , con = conn)
             cumul_enr_placee_24h = -cumul_enr_placee_24h
         cumul_enr_placee_24h = int(cumul_enr_placee_24h.loc[0]['sum'])
-        print ("Enr placée 24h : ", cumul_enr_placee_24h)
         #Calcul de la consommation d'énergie du panel mis à l'échelle les dernières 24h (item Panel_R_puissance_mae dans Zabbix)
         zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
@@ -265,12 +271,12 @@ async def main():
         cumul_autoconso = val_prec + cumul_supp
         return cumul_autoconso
     
-    def pourcentage_autoconso_30j() -> int:
+    def pourcentage_autoconso_mois() -> int:
         #Connection au Zabbix
         zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
-        tf = int(tt - 60 * 60 * 24 * 30)
-        #Calcul de l'enr produite et consommée sur le territoire le mois dernier
+        tf = int(tt - 60 * 60 * 24 * datetime.now().day)
+        #Calcul de l'enr produite et consommée sur le territoire pendant le mois courant
         enr_prod_mae = 0 #Production mise à l'échelle sur l'heure (en Wh)
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
             enr_prod_mae += int(float(i['value']))*(1/20)
@@ -279,7 +285,7 @@ async def main():
             if (float(i['value'])>0):
                 surplus_prod += int(float(i['value']))*(1/60)
         enr_prod_et_conso = int(enr_prod_mae - surplus_prod) #Enr produite et consommée sur le territoire
-        #Calcul de la production mise à l'échelle du panel le mois dernier
+        #Calcul de la production mise à l'échelle du panel pendant le mois courant
         enr_prod = 0
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
             enr_prod += int(float(i['value'])) #Panel_Prod_puissance_mae
@@ -381,7 +387,7 @@ async def main():
         return int(pourcentage_prod_metha)
     
     print("\n DEBUT")
-    print(indic_appareils_connectes())
+    print(pourcentage_autoconso_mois())
     print("FIN \n")
     
     #Encapsulation dans un csv
@@ -389,7 +395,7 @@ async def main():
     finalpath = os.path.join(path, filename)
     print("Path : ", finalpath)
     fichier = open(f"/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/indics.csv", "w")
-    
+        
     res1 = str(indic_appareils_connectes())
     fichier.write("\"Zabbix server\" Nombre_appareils_connectes_test " + res1 + "\n")
     
@@ -405,7 +411,7 @@ async def main():
     res_cautoconso = str(cumul_enr_autoconso_opti())
     fichier.write("\"Zabbix server\" Energie_autoconsommee_test " + res_cautoconso + "\n")
     
-    res_pautoconso = str(pourcentage_autoconso_30j())
+    res_pautoconso = str(pourcentage_autoconso_mois())
     fichier.write("\"Zabbix server\" Pourcentage_autoconsommation_test " + res_pautoconso + "\n")
     
     res_enreol = str(enr_eolien())

@@ -15,7 +15,7 @@ class ConnectionBDD:
     def __init__(self, nombdd:str, nomSchema : str = "public"):
         self.nomBDD = nombdd
         self.nomSchema = nomSchema
-        #Construction de l'URL : dialect+driver://username:password@host:port/database
+        #TODO Construction de l'URL : dialect+driver://username:password@host:port/database
         deburl = f"postgresql+psycopg2://username:password@ip_host:port/{self.nomBDD}"
         #Création de la connection à une BDD
         self.engine = db.create_engine (deburl, connect_args={"options": f"-csearch_path={self.nomSchema}"})

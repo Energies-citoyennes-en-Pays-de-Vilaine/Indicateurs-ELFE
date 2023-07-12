@@ -155,12 +155,12 @@ async def main():
     
 #**************************** CALCUL DU POURCENTAGE DE L'ÉNERGIE AUTOCONSOMMÉE SUR LE TERRITOIRE ************************************
     
-    def pourcentage_autoconso_30j() -> int:
+    def pourcentage_autoconso_mois() -> int:
         #Connection au Zabbix
         zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
-        tf = int(tt - 60 * 60 * 24 * 30.5)
-        #Calcul de l'enr produite et consommée sur le territoire le mois dernier
+        tf = int(tt - 60 * 60 * 24 * datetime.now().day)
+        #Calcul de l'enr produite et consommée sur le territoire pendant le mois courant
         enr_prod_mae = 0 #Production mise à l'échelle sur l'heure (en Wh)
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
             enr_prod_mae += int(float(i['value']))*(1/20)
@@ -169,10 +169,8 @@ async def main():
             if (float(i['value'])>0):
                 surplus_prod += int(float(i['value']))*(1/60)
         enr_prod_et_conso = int(enr_prod_mae - surplus_prod) #Enr produite et consommée sur le territoire
-        #Calcul de la production mise à l'échelle du panel le mois dernier
+        #Calcul de la production mise à l'échelle du panel pendant le mois courant
         enr_prod = 0
-        tt = int(time.mktime(datetime.now().timetuple()))
-        tf = int(tt - 60 * 60 * 24)
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
             enr_prod += int(float(i['value'])) #Panel_Prod_puissance_mae
         #Calcul du pourcentage d'autoconsommation
@@ -306,7 +304,7 @@ async def main():
     res_cautoconso = str(cumul_enr_autoconso())
     fichier.write("\"Zabbix server\" Energie_autoconsommee_test " + res_cautoconso + "\n")
     
-    res_pautoconso = str(pourcentage_autoconso_30j())
+    res_pautoconso = str(pourcentage_autoconso_mois())
     fichier.write("\"Zabbix server\" Pourcentage_autoconsommation_test " + res_pautoconso + "\n")
     
     res_enreol = str(enr_eolien())

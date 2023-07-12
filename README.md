@@ -233,12 +233,10 @@ Automatiser un script sur un serveur nécessite l'ajout de deux fichiers : un .s
 
 ## Piste d'amélioration et suite du projet
 
-- Faire le gitignore et les exemples
-- Recalculer le 1er cumul de l'énergie avec la fonction du pourcentage d'après (en faisant pc_with - pc_without)
-- Recalculer les deux cumuls en récupérant la précédente valeur et en ajoutant simplement ce qui s'est rajouté depuis
-- Pour le cumul_enr_autoconso : relancer en auto le code une fois avant de remplacer par la version opti
+- Recalculer le 1er cumul de l'énergie avec la fonction du pourcentage d'après (en faisant pc_with - pc_without) --> voir avec Elias
+- Relire / Compléter / Refaire doc
 
 - Rajouter du texte en gras pour guider l'utilisateur dans les points information.
 - Vérifier la correspondance des identifiants Zabbix entre la préprod et la prod sur Viriya.
-- Pour les graphiques, la lib js ne permet de récupérer que 5000 points (on peut techniquement faire plus, mais cela serait encore plus long à charger). Pour les graphiques, il serait donc peut-être pertinent de créer de nouveaux indicateurs Zabbix qui ne récupère qu'une donnée sur 96 de l'indicateur de base pour avoir une valeur par 24 heures par exemple.
-- L'indicateur de cumul de l'énergie placée recalcule à chaque fois tout, il serait donc beaucoup plus optimal d'opter pour une autre méthode de calcul en récupérant la valeur précédente et en ajoutant simplement ce qui a été placé depuis.
+- Pour les graphiques, la lib js ne permet de récupérer que 5000 points (on peut techniquement faire plus, mais cela serait encore plus long à charger). Pour les graphiques, il serait donc peut-être pertinent de créer de nouveaux indicateurs Zabbix qui ne récupère qu'une donnée sur 96 de l'indicateur de base pour avoir une valeur par 24 heures par exemple. Il faudrait dans ce cas remplacer les indicateurs présentés sur le tableur de Cédric.
+- Les indicateurs de cumul recalculent à chaque fois tout, il serait donc beaucoup plus optimal d'opter pour une autre méthode de calcul en récupérant la valeur précédente et en ajoutant simplement ce qui a été placé depuis.
