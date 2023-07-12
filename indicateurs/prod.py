@@ -4,13 +4,14 @@ from connectionZabbix import *
 from Zapi import *
 import pandas as pd
 import os
-from pandasql import sqldf
-import sqlalchemy
-from pyzabbix import ZabbixAPI
 from datetime import datetime
 import time
 
 async def main():
+    
+    #Informations sur le serveur
+    ipserveur = "192.168.30.111"
+    host = "Zabbix server"
     
 #************************************* CONNEXION À LA BASE DE DONNÉES ******************************************************
     
@@ -327,8 +328,7 @@ async def main():
 #****************************************** CONNEXION ET ENVOI DES DONNÉES AU SERVEUR **************************************************
         
     #Connection au Zabbix
-    ipserveur = "192.168.30.111"
-    zab = ConnectionZabbix(ipserveur, 'Zabbix server')
+    zab = ConnectionZabbix(ipserveur, host)
     
     #Création et ajout des différentes mesures à l'attribut measurements de l'objet Zabbix
     def addMeasurement(cle:str, res:str):
