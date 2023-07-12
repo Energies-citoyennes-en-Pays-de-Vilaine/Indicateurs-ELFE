@@ -1,12 +1,12 @@
 import asyncio
 from connectionBDD import *
 from connectionZabbix import *
+from Zapi import *
 from datetime import datetime
 import time
 import sys
 import pandas as pd
 import os
-from calcul import *
 from pandasql import sqldf
 from pyzabbix import ZabbixAPI
 
@@ -47,38 +47,37 @@ async def main():
         
     #Connection aux tables dont on a besoin
     try:
-        result = conn_sortie.get_table('result')
+        conn_sortie.get_table('result')
         print(f"Table for result created successfully.")
     except Exception as ex:
         print("Table for result could not be made due to the following error: \n", ex)
         
     try:
-        conso = conn_sortie.get_table('equipement_pilote_consommation_moyenne')
+        conn_sortie.get_table('equipement_pilote_consommation_moyenne')
         print(f"Table for conso created successfully.")
-        print(conso)
     except Exception as ex:
         print("Table for conso could not be made due to the following error: \n", ex)
         
     try:
-        withflex = conn_sortie.get_table('p_c_with_flexible_consumption')
+        conn_sortie.get_table('p_c_with_flexible_consumption')
         print(f"Table for p_c_with_flexible_consumption created successfully.")
     except Exception as ex:
         print("Table for p_c_with_flexible_consumption could not be made due to the following error: \n", ex)
         
     try:
-        withoutflex = conn_sortie.get_table('p_c_without_flexible_consumption')
+        conn_sortie.get_table('p_c_without_flexible_consumption')
         print(f"Table for p_c_without_flexible_consumption created successfully.")
     except Exception as ex:
         print("Table for p_c_without_flexible_consumption could not be made due to the following error: \n", ex)
         
     try:
-        equipement_pilote_ou_mesure = conn_coordo.get_table_with_schema('equipement_pilote_ou_mesure', 'bdd_coordination_schema')
+        conn_coordo.get_table_with_schema('equipement_pilote_ou_mesure', 'bdd_coordination_schema')
         print(f"Table for equipement_pilote_ou_mesure created successfully.")
     except Exception as ex:
         print("Table for equipement_pilote_ou_mesure could not be made due to the following error: \n", ex)
     
     try:
-        equipement_mesure_compteur_electrique = conn_coordo.get_table_with_schema('equipement_mesure_compteur_electrique', 'bdd_coordination_schema')
+        conn_coordo.get_table_with_schema('equipement_mesure_compteur_electrique', 'bdd_coordination_schema')
         print(f"Table for equipement_mesure_compteur_electrique created successfully.")
     except Exception as ex:
         print("Table for equipement_mesure_compteur_electrique could not be made due to the following error: \n", ex)
@@ -92,7 +91,7 @@ async def main():
                                     ORDER BY first_valid_timestamp DESC\
                                     LIMIT 1"\
                                     , con = conn)
-        return appconn
+        return int(appconn.loc[0]['count'])
         
     #Calcul du nombre d'appareils pilotés la semaine dernière
     def indic_appareils_pilotes_semaine() -> int :
@@ -104,37 +103,26 @@ async def main():
     #Calcul du pourcentage des appareils de ELFE lancés dans les dernières 24h
     # Actuellement, il est mis au niveau du pourcentage de machines activées dans Viriya
     #Rajouter des types dans la liste si de nouveaux types qu'on ne peut pas piloter s'ajoutent
-    def pourcentage_app_lancés_24h() -> int :
+    def pourcentage_app_lancés_24h() -> float :
         with conn_coordo.engine.connect() as conn:
             nb_app_EMS = pd.read_sql("SELECT COUNT(*) FROM equipement_pilote_ou_mesure\
                                         WHERE equipement_pilote_ou_mesure_type_id NOT IN (410, 901, 910, 920)"
                                     , con = conn)
-            print("Nb app EMS : ", nb_app_EMS)       
+        nb_app_EMS = int(nb_app_EMS.loc[0]['count'])
         with conn_sortie.engine.connect() as conn:
             nb_app_lancés_24h_continu = pd.read_sql("SELECT COUNT(DISTINCT machine_id) FROM result \
                                                         WHERE machine_type IN (131, -1)\
                                                         AND decisions_0 = 1\
                                                         AND first_valid_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
                                         , con = conn) # Compléter les machine_type
-            """
-            nb_app_lancés_24h_discontinu = pd.read_sql("SELECT COUNT(*) FROM result AS r1 \
-                                                        INNER JOIN  result AS r2 ON r1.machine_id = r2.machine_id\
-                                                            WHERE r2.machine_type IN (221)\
-                                                            AND r2.first_valid_timestamp = r1.first_valid_timestamp + 900\
-                                                            AND r2.decisions_0 = 0\
-                                                            AND r1.decisions_0 = 1\
-                                                            AND r2.first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"
-                                            , con = conn) # Compléter les machine_type : 112, 111, 113, 225, 515
-            """
             nb_app_lancés_24h_discontinu = pd.read_sql(""" SELECT COUNT(*) FROM result 
                                                 WHERE decisions_0 = 1
                                                 AND machine_type IN (221)
                                                 AND first_valid_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400)"""
                                         , con = conn)
-        nb_app_lancés_24h = nb_app_lancés_24h_continu + nb_app_lancés_24h_discontinu
+        nb_app_lancés_24h = int(nb_app_lancés_24h_continu.loc[0]['count']) + int(nb_app_lancés_24h_discontinu.loc[0]['count'])
         pourcentage_app_lancés_24h = (100*nb_app_lancés_24h)/nb_app_EMS
-        pourcentage_app_lancés_24h = round(pourcentage_app_lancés_24h, 1)
-        return pourcentage_app_lancés_24h   
+        return round(pourcentage_app_lancés_24h, 1)
         #Liste continu à terme (en prod) : 131, 151, 155
         #Liste discontinu à terme (en prod) : 515, 112, 111, 113, 221, 225
     
@@ -158,7 +146,6 @@ async def main():
                                                                         GROUP BY machine_type) AS T3 WHERE machine_type IN (131)"""
                                     , con = conn) #Compléter les machines_type
             print("Coeffs continus : ", coeffs_continu)
-
             #On récupère la table machine_type | consommation moyenne.
             with conn_coordo.engine.connect() as conn:
                 conso_energie:pd.DataFrame = pd.read_sql("SELECT equipement_pilote_type_id, consommation FROM equipement_pilote_consommation_moyenne"
@@ -174,7 +161,7 @@ async def main():
                 for j in conso_energie.index:
                     if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
                         cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
-            return int(cumul_enr*1000)
+            return int(cumul_enr/1000)
     
     #Calcul du cumul de kW d'énergie placés par l'EMS depuis le début du projet
     def cumul_enr_opti() -> int:
@@ -228,8 +215,7 @@ async def main():
         cumul_enr_placee_24h = int(cumul_enr_placee_24h.loc[0]['sum'])
         print ("Enr placée 24h : ", cumul_enr_placee_24h)
         #Calcul de la consommation d'énergie du panel mis à l'échelle les dernières 24h (item Panel_R_puissance_mae dans Zabbix)
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 60 * 24)
         puissance_panel_mae = 0
@@ -240,8 +226,7 @@ async def main():
         
     def cumul_enr_autoconso() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = 1667287596
         #Calcul de la production mise à l'échelle sur l'heure (en Wh)
@@ -259,10 +244,9 @@ async def main():
     
     def cumul_enr_autoconso_opti() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
-        tf = int(tt - 60 * 60 * 24)
+        tf = int(tt - 60 * 15)
         #Récupération de la précédente valeur
         val_prec = 0
         for i in zapi.history.get(hostids = [10084], itemids = [45255], time_from = tf, time_till = tt-5, output = "extend", limit = 1, history=0):
@@ -283,10 +267,9 @@ async def main():
     
     def pourcentage_autoconso_30j() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
-        tf = int(tt - 60 * 60 * 24 * 30.5)
+        tf = int(tt - 60 * 60 * 24 * 30)
         #Calcul de l'enr produite et consommée sur le territoire le mois dernier
         enr_prod_mae = 0 #Production mise à l'échelle sur l'heure (en Wh)
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
@@ -298,8 +281,6 @@ async def main():
         enr_prod_et_conso = int(enr_prod_mae - surplus_prod) #Enr produite et consommée sur le territoire
         #Calcul de la production mise à l'échelle du panel le mois dernier
         enr_prod = 0
-        tt = int(time.mktime(datetime.now().timetuple()))
-        tf = int(tt - 60 * 60 * 24)
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
             enr_prod += int(float(i['value'])) #Panel_Prod_puissance_mae
         #Calcul du pourcentage d'autoconsommation
@@ -308,8 +289,7 @@ async def main():
     
     def enr_eolien() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 15)
         #Calcul de l'énergie éolienne des 15 dernières minutes à partir de la puissance
@@ -320,8 +300,7 @@ async def main():
     
     def enr_solaire() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 15)
         #Calcul de l'énergie solaire des 15 dernières minutes à partir de la puissance
@@ -332,8 +311,7 @@ async def main():
     
     def enr_metha() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 15)
         #Calcul de l'énergie métha des 15 dernières minutes à partir de la puissance
@@ -344,8 +322,7 @@ async def main():
     
     def part_eolien_prod_15min() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 15)
         #Production totale d'enr sur le dernier 1/4h
@@ -365,8 +342,7 @@ async def main():
     
     def part_solaire_prod_15min() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 15)
         #Production totale d'enr sur le dernier 1/4h
@@ -386,8 +362,7 @@ async def main():
     
     def part_metha_prod_15min() -> int:
         #Connection au Zabbix
-        zapi = ZabbixAPI("http://mqtt.projet-elfe.fr")
-        zapi.login("liana", "b6!8Lw7DMbC7khUC")
+        zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 15)
         #Production totale d'enr sur le dernier 1/4h
@@ -406,75 +381,49 @@ async def main():
         return int(pourcentage_prod_metha)
     
     print("\n DEBUT")
-    print("Enr eolien : ", enr_eolien())
-    print("Enr solaire : ", enr_solaire())
-    print("Enr metha : ", enr_metha())
+    print(indic_appareils_connectes())
     print("FIN \n")
     
     #Encapsulation dans un csv
-    filename = f"indics-{nowstr}.csv"
+    filename = "indics.csv"
     finalpath = os.path.join(path, filename)
     print("Path : ", finalpath)
     fichier = open(f"/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/indics.csv", "w")
     
-    appconn = indic_appareils_connectes()
-    df1 = pd.DataFrame(appconn)    
-    res1 = df1.to_string (header=False, index = False)
+    res1 = str(indic_appareils_connectes())
     fichier.write("\"Zabbix server\" Nombre_appareils_connectes_test " + res1 + "\n")
     
-    pourcentage_app = pourcentage_app_lancés_24h()
-    df2 = pd.DataFrame(pourcentage_app)
-    res2 = df2.to_string(header=False, index=False)
+    res2 = str(pourcentage_app_lancés_24h())
     fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h_test " + res2 + "\n")
     
-    cumul_ener = [cumul_enr()]
-    df_cumul = pd.DataFrame(cumul_ener)
-    res_cumul = df_cumul.to_string(header=False, index=False)
+    res_cumul = str(cumul_enr())
     fichier.write("\"Zabbix server\" Cumul_energie_placee_test " + res_cumul + "\n")
     
-    conso_ener_placee = [conso_enr_placee()]
-    df_conso = pd.DataFrame(conso_ener_placee)
-    res_conso = df_conso.to_string(header=False, index=False)
+    res_conso = str(conso_enr_placee())
     fichier.write("\"Zabbix server\" Pourcentage_energie_consommee_placee_test " + res_conso + "\n")
     
-    cumul_ener_autoconso = [cumul_enr_autoconso_opti()]
-    df_cautoconso = pd.DataFrame(cumul_ener_autoconso)
-    res_cautoconso = df_cautoconso.to_string(header=False, index=False)
+    res_cautoconso = str(cumul_enr_autoconso_opti())
     fichier.write("\"Zabbix server\" Energie_autoconsommee_test " + res_cautoconso + "\n")
     
-    pourcentage_autoconso = [pourcentage_autoconso_30j()]
-    df_pautoconso = pd.DataFrame(pourcentage_autoconso)
-    res_pautoconso = df_pautoconso.to_string(header=False, index=False)
+    res_pautoconso = str(pourcentage_autoconso_30j())
     fichier.write("\"Zabbix server\" Pourcentage_autoconsommation_test " + res_pautoconso + "\n")
     
-    enr_eol = [enr_eolien()]
-    df_enreol = pd.DataFrame(enr_eol)
-    res_enreol = df_enreol.to_string(header=False, index=False)
+    res_enreol = str(enr_eolien())
     fichier.write("\"Zabbix server\" Enr_eolienne_test " + res_enreol + "\n")
-    
-    enr_sol = [enr_solaire()]
-    df_enrsol = pd.DataFrame(enr_sol)
-    res_enrsol = df_enrsol.to_string(header=False, index=False)
+
+    res_enrsol = str(enr_solaire())
     fichier.write("\"Zabbix server\" Enr_solaire_test " + res_enrsol + "\n")
-    
-    enr_meth = [enr_metha()]
-    df_enrmeth = pd.DataFrame(enr_meth)
-    res_enrmeth = df_enrmeth.to_string(header=False, index=False)
+
+    res_enrmeth = str(enr_metha)
     fichier.write("\"Zabbix server\" Enr_methanisation_test " + res_enrmeth + "\n")
     
-    part_eol = [part_eolien_prod_15min()]
-    df_eol = pd.DataFrame(part_eol)
-    res_eol = df_eol.to_string(header=False, index=False)
+    res_eol = str(part_eolien_prod_15min())
     fichier.write("\"Zabbix server\" Part_eolien_prod " + res_eol + "\n")
     
-    part_sol = [part_solaire_prod_15min()]
-    df_sol = pd.DataFrame(part_sol)
-    res_sol = df_sol.to_string(header=False, index=False)
+    res_sol = str(part_solaire_prod_15min())
     fichier.write("\"Zabbix server\" Part_solaire_prod " + res_sol + "\n")
-    
-    part_meth = [part_metha_prod_15min()]
-    df_meth = pd.DataFrame(part_meth)
-    res_meth = df_meth.to_string(header=False, index=False)
+
+    res_meth = str(part_metha_prod_15min())
     fichier.write("\"Zabbix server\" Part_metha_prod " + res_meth + "\n")
         
     #Connection au Zabbix
@@ -484,68 +433,19 @@ async def main():
     except Exception as ex:
         print("Connection to Zabbix could not be made due to the following error: \n", ex)
         
-    try:
-        m1 = zb.Measurement(zab.host, "Nombre_appareils_connectes_test", res1)
-        zab.measurements.add_measurement(m1)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
+    def addMeasurement(cle:str, res:str):
+        m = zb.Measurement(zab.host, cle, res)
+        zab.measurements.add_measurement(m)
         
-    try:
-        m2 = zb.Measurement(zab.host, "Pourcentage_app_lances_24h_test", res2)
-        zab.measurements.add_measurement(m2)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
-    
-    try:
-        m_cumul = zb.Measurement(zab.host, "Cumul_energie_placee_test", res_cumul)
-        zab.measurements.add_measurement(m_cumul)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
-        
-    try:
-        m_conso = zb.Measurement(zab.host, "Pourcentage_energie_consommee_placee_test", res_conso)
-        zab.measurements.add_measurement(m_conso)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
-    
-    try:
-        m_cautoconso = zb.Measurement(zab.host, "Energie_autoconsommee_test", res_cautoconso)
-        zab.measurements.add_measurement(m_cautoconso)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
-    
-    try:
-        m_pautoconso = zb.Measurement(zab.host, "Pourcentage_autoconsommation_test", res_pautoconso)
-        zab.measurements.add_measurement(m_pautoconso)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
-        
-    try:
-        m_enreol = zb.Measurement(zab.host, "Enr_eolienne_test", res_enreol)
-        zab.measurements.add_measurement(m_enreol)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
-        
-    try:
-        m_enrsol = zb.Measurement(zab.host, "Enr_solaire_test", res_enrsol)
-        zab.measurements.add_measurement(m_enrsol)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
-        
-    try:
-        m_enrmeth = zb.Measurement(zab.host, "Enr_methanisation_test", res_enrmeth)
-        zab.measurements.add_measurement(m_enrmeth)
-        print(f"Creation of the measurement and adding made successfully.")
-    except Exception as ex:
-        print("Creation of the measurement or adding could not be made due to the following error: \n", ex)
+    addMeasurement("Pourcentage_app_lances_24h_test", res2)
+    addMeasurement("Nombre_appareils_connectes_test", res1)
+    addMeasurement("Cumul_energie_placee_test", res_cumul)
+    addMeasurement("Pourcentage_energie_consommee_placee_test", res_conso)
+    addMeasurement("Energie_autoconsommee_test", res_cautoconso)
+    addMeasurement("Pourcentage_autoconsommation_test", res_pautoconso)
+    addMeasurement("Enr_eolienne_test", res_enreol)
+    addMeasurement("Enr_solaire_test", res_enrsol)
+    addMeasurement("Enr_methanisation_test", res_enrmeth)
     
     try:
         await zab.response()
