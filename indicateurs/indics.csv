@@ -1,12 +1,12 @@
 "Zabbix server" Nombre_appareils_connectes_test 4
 "Zabbix server" Pourcentage_app_lances_24h_test 8.7
 "Zabbix server" Cumul_energie_placee_test 331
-"Zabbix server" Pourcentage_energie_consommee_placee_test 13
-"Zabbix server" Energie_autoconsommee_test 65073
+"Zabbix server" Pourcentage_energie_consommee_placee_test 12
+"Zabbix server" Energie_autoconsommee_test 148429
 "Zabbix server" Pourcentage_autoconsommation_test 4
-"Zabbix server" Enr_eolienne_test 1371140
-"Zabbix server" Enr_solaire_test 887183
-"Zabbix server" Enr_methanisation_test <function main.<locals>.enr_metha at 0x7faa82271990>
-"Zabbix server" Part_eolien_prod 60
-"Zabbix server" Part_solaire_prod 39
+"Zabbix server" Enr_eolienne_test 3621585
+"Zabbix server" Enr_solaire_test 1059950
+"Zabbix server" Enr_methanisation_test <function main.<locals>.enr_metha at 0x7f4505c01a20>
+"Zabbix server" Part_eolien_prod 77
+"Zabbix server" Part_solaire_prod 22
 "Zabbix server" Part_metha_prod 0

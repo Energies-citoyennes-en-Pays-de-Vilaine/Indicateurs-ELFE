@@ -129,14 +129,6 @@ async def main():
     #Calcul du cumul de kW d'énergie placés par l'EMS depuis le début du projet
     def cumul_enr() -> int:
         with conn_sortie.engine.connect() as conn:
-            cumul_enr_placee:pd.DataFrame = pd.read_sql(""" SELECT SUM((0.25)*(p_c_with_flexible_consumption.power - p_c_without_flexible_consumption.power)) FROM p_c_with_flexible_consumption
-                                                        INNER JOIN p_c_without_flexible_consumption
-                                                        USING(data_timestamp) """
-                            , con = conn)
-        cumul_enr_placee = -(cumul_enr_placee/1000)
-        cumul_enr_placee = int(cumul_enr_placee.loc[0]['sum'])
-        print("Nouveau calcul : ", cumul_enr_placee)
-        with conn_sortie.engine.connect() as conn:
             #On fabrique deux tables sous la forme machine_type | nombre de lancements
             #1e table pour les machines discoutinues : on compte chaque lancement
             coeffs_discontinu:pd.DataFrame = pd.read_sql("SELECT machine_type, COUNT(*) FROM result\

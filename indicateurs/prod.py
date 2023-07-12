@@ -79,7 +79,6 @@ async def main():
                                                 AND machine_type IN (111, 112, 113, 221, 225, 515)\
                                             GROUP BY machine_type"
                                     , con = conn) #Compléter les machines_type
-            print("Coeffs discontinus : " , coeffs_discontinu)
             #2e table pour les machines continues : si pas de arrêt / relance, on compte un lancement par jour
             coeffs_continu:pd.DataFrame = pd.read_sql("""SELECT * FROM 
                                                         (SELECT machine_type, COUNT(*) FROM 
@@ -88,7 +87,6 @@ async def main():
                                                                         result WHERE decisions_0 = 1) AS T1) AS T2
                                                                         GROUP BY machine_type) AS T3 WHERE machine_type IN (131, 151, 155)"""
                                     , con = conn) #Compléter les machines_type
-            print("Coeffs continus : ", coeffs_continu)
             #On récupère la table machine_type | consommation moyenne.
             with conn_coordo.engine.connect() as conn:
                 conso_energie:pd.DataFrame = pd.read_sql("SELECT equipement_pilote_type_id, consommation FROM equipement_pilote_consommation_moyenne"
@@ -117,7 +115,7 @@ async def main():
             cumul_enr_placee_24h:pd.DataFrame = pd.read_sql(""" SELECT SUM((0.25)*(p_c_with_flexible_consumption.power - p_c_without_flexible_consumption.power)) FROM p_c_with_flexible_consumption
                                                         INNER JOIN p_c_without_flexible_consumption
                                                         USING(data_timestamp)
-                                                        WHERE p_c_with_flexible_consumption.data_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400) """
+                                                        WHERE p_c_with_flexible_consumption.data_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT)) """
                             , con = conn)
             cumul_enr_placee_24h = -cumul_enr_placee_24h
         cumul_enr_placee_24h = int(cumul_enr_placee_24h.loc[0]['sum'])
@@ -290,31 +288,31 @@ async def main():
     
     #Écriture de chaque indicateur dans le fichier .csv
     res_app = str(indic_appareils_connectes())
-    fichier.write("\"Zabbix server\" Nombre_appareils_connectes_test " + res_app + "\n")
+    fichier.write("\"Zabbix server\" Nombre_appareils_connectes " + res_app + "\n")
     
     res_papp = str(pourcentage_app_lancés_24h())
-    fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h_test " + res_papp + "\n")
+    fichier.write("\"Zabbix server\" Pourcentage_app_lances_24h " + res_papp + "\n")
     
     res_cumul = str(cumul_enr())
-    fichier.write("\"Zabbix server\" Cumul_energie_placee_test " + res_cumul + "\n")
+    fichier.write("\"Zabbix server\" Cumul_energie_placee " + res_cumul + "\n")
     
     res_conso = str(conso_enr_placee())
-    fichier.write("\"Zabbix server\" Pourcentage_energie_consommee_placee_test " + res_conso + "\n")
+    fichier.write("\"Zabbix server\" Pourcentage_energie_consommee_placee " + res_conso + "\n")
     
     res_cautoconso = str(cumul_enr_autoconso())
-    fichier.write("\"Zabbix server\" Energie_autoconsommee_test " + res_cautoconso + "\n")
+    fichier.write("\"Zabbix server\" Energie_autoconsommee " + res_cautoconso + "\n")
     
     res_pautoconso = str(pourcentage_autoconso_mois())
-    fichier.write("\"Zabbix server\" Pourcentage_autoconsommation_test " + res_pautoconso + "\n")
+    fichier.write("\"Zabbix server\" Pourcentage_autoconsommation " + res_pautoconso + "\n")
     
     res_enreol = str(enr_eolien())
-    fichier.write("\"Zabbix server\" Enr_eolienne_test " + res_enreol + "\n")
+    fichier.write("\"Zabbix server\" Enr_eolienne " + res_enreol + "\n")
 
     res_enrsol = str(enr_solaire())
-    fichier.write("\"Zabbix server\" Enr_solaire_test " + res_enrsol + "\n")
+    fichier.write("\"Zabbix server\" Enr_solaire " + res_enrsol + "\n")
 
-    res_enrmeth = str(enr_metha)
-    fichier.write("\"Zabbix server\" Enr_methanisation_test " + res_enrmeth + "\n")
+    res_enrmeth = str(enr_metha())
+    fichier.write("\"Zabbix server\" Enr_methanisation " + res_enrmeth + "\n")
     
     res_eol = str(part_eolien_prod_15min())
     fichier.write("\"Zabbix server\" Part_eolien_prod " + res_eol + "\n")
@@ -326,25 +324,26 @@ async def main():
     fichier.write("\"Zabbix server\" Part_metha_prod " + res_meth + "\n")
     
     
-#****************************************** CONNECTION ET ENVOI DES DONNÉES AU SERVEUR **************************************************
+#****************************************** CONNEXION ET ENVOI DES DONNÉES AU SERVEUR **************************************************
         
     #Connection au Zabbix
-    zab = ConnectionZabbix('192.168.30.111', 'Zabbix server')
+    ipserveur = "192.168.30.111"
+    zab = ConnectionZabbix(ipserveur, 'Zabbix server')
     
     #Création et ajout des différentes mesures à l'attribut measurements de l'objet Zabbix
     def addMeasurement(cle:str, res:str):
         m = zb.Measurement(zab.host, cle, res)
         zab.measurements.add_measurement(m)
         
-    addMeasurement("Pourcentage_app_lances_24h_test", res_app)
-    addMeasurement("Nombre_appareils_connectes_test", res_papp)
+    addMeasurement("Pourcentage_app_lances_24h", res_app)
+    addMeasurement("Nombre_appareils_connectes", res_papp)
     addMeasurement("Cumul_energie_placee_test", res_cumul)
-    addMeasurement("Pourcentage_energie_consommee_placee_test", res_conso)
-    addMeasurement("Energie_autoconsommee_test", res_cautoconso)
-    addMeasurement("Pourcentage_autoconsommation_test", res_pautoconso)
-    addMeasurement("Enr_eolienne_test", res_enreol)
-    addMeasurement("Enr_solaire_test", res_enrsol)
-    addMeasurement("Enr_methanisation_test", res_enrmeth)
+    addMeasurement("Pourcentage_energie_consommee_placee", res_conso)
+    addMeasurement("Energie_autoconsommee", res_cautoconso)
+    addMeasurement("Pourcentage_autoconsommation", res_pautoconso)
+    addMeasurement("Enr_eolienne", res_enreol)
+    addMeasurement("Enr_solaire", res_enrsol)
+    addMeasurement("Enr_methanisation", res_enrmeth)
     addMeasurement("Part_eolien_prod", res_eol)
     addMeasurement("Part_solaire_prod", res_sol)
     addMeasurement("Part_metha_prod", res_meth)
