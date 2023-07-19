@@ -94,7 +94,7 @@ async def main():
                         , con = conn)
             #cumul_enr correspond à l'indicateur final qu'on initialise à 0
             cumul_enr = 0
-            #On l'incrémente avec pour chaque ligne des tableaux continus et discontinus nb de machines d'un type * moyenne de l'énergie consommée par ce type de machine 
+            #On l'incrémente avec pour chaque ligne des tableaux continus et discontinus : nb de machines d'un type * moyenne de l'énergie consommée par ce type de machine 
             for i in coeffs_discontinu.index:
                 for j in conso_energie.index:
                     if coeffs_discontinu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
@@ -103,7 +103,7 @@ async def main():
                 for j in conso_energie.index:
                     if coeffs_continu.loc[i]['machine_type'] == conso_energie.loc[j]['equipement_pilote_type_id']:
                         cumul_enr += coeffs_continu.loc[i]['count'] * conso_energie.loc[j]['consommation']
-            return int(cumul_enr/1000) #On a des Wh et on veut des kWh
+            return int(cumul_enr) #La valeur renvoyée a la même unité que celle de la table "equipement_pilote_consommation_moyenne"
         
         
 #**************************** CALCUL DU POURCENTAGE DE LA CONSOMMATION D'ÉNERGIE DES FOYERS PLACÉE ************************************
@@ -337,7 +337,7 @@ async def main():
         
     addMeasurement("Pourcentage_app_lances_24h", res_app)
     addMeasurement("Nombre_appareils_connectes", res_papp)
-    addMeasurement("Cumul_energie_placee_test", res_cumul)
+    addMeasurement("Cumul_energie_placee", res_cumul)
     addMeasurement("Pourcentage_energie_consommee_placee", res_conso)
     addMeasurement("Energie_autoconsommee", res_cautoconso)
     addMeasurement("Pourcentage_autoconsommation", res_pautoconso)
