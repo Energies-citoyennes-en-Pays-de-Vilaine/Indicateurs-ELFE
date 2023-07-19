@@ -335,8 +335,9 @@ async def main():
         m = zb.Measurement(zab.host, cle, res)
         zab.measurements.add_measurement(m)
         
-    addMeasurement("Pourcentage_app_lances_24h", res_app)
-    addMeasurement("Nombre_appareils_connectes", res_papp)
+    
+    addMeasurement("Nombre_appareils_connectes", res_app)
+    addMeasurement("Pourcentage_app_lances_24h", res_papp)
     addMeasurement("Cumul_energie_placee", res_cumul)
     addMeasurement("Pourcentage_energie_consommee_placee", res_conso)
     addMeasurement("Energie_autoconsommee", res_cautoconso)
