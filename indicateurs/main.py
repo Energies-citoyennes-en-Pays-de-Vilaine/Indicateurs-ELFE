@@ -208,17 +208,18 @@ async def main():
             cumul_enr_placee_24h:pd.DataFrame = pd.read_sql(""" SELECT SUM((0.25)*(p_c_with_flexible_consumption.power - p_c_without_flexible_consumption.power)) FROM p_c_with_flexible_consumption
                                                         INNER JOIN p_c_without_flexible_consumption
                                                         USING(data_timestamp)
-                                                        WHERE p_c_with_flexible_consumption.data_timestamp >= (CAST(EXTRACT (epoch FROM NOW()) AS INT) - 86400) """
+                                                        WHERE p_c_with_flexible_consumption.data_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT)) """
                             , con = conn)
             cumul_enr_placee_24h = -cumul_enr_placee_24h
         cumul_enr_placee_24h = int(cumul_enr_placee_24h.loc[0]['sum'])
+        print("cumul energie flexible",cumul_enr_placee_24h)
         #Calcul de la consommation d'énergie du panel mis à l'échelle les dernières 24h (item Panel_R_puissance_mae dans Zabbix)
         zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
         tf = int(tt - 60 * 60 * 24)
         puissance_panel_mae = 0
         for i in zapi.history.get(hostids = [10084], itemids = [44968], time_from = tf, time_till = tt, output = "extend", limit = 1440, history = 0):
-            puissance_panel_mae += int(float(i['value'])) * (1/60) #Panel_R_puissance_mae
+            puissance_panel_mae += int(float(i['value'])) * (1/20) #Panel_R_puissance_mae
         pourcentage_enr_conso_placee = int(100*(cumul_enr_placee_24h/puissance_panel_mae))
         return pourcentage_enr_conso_placee
         
@@ -386,7 +387,7 @@ async def main():
     filename = "indics.csv"
     finalpath = os.path.join(path, filename)
     print("Path : ", finalpath)
-    fichier = open(f"/home/lblandin/Documents/Indicateurs-ELFE/indicateurs/indics.csv", "w")
+    fichier = open("/home/indicateurs/Indicateurs-ELFE/indicateurs/indics.csv","w")
         
     res1 = str(indic_appareils_connectes())
     fichier.write("\"Zabbix server\" Nombre_appareils_connectes_test " + res1 + "\n")
@@ -412,7 +413,7 @@ async def main():
     res_enrsol = str(enr_solaire())
     fichier.write("\"Zabbix server\" Enr_solaire_test " + res_enrsol + "\n")
 
-    res_enrmeth = str(enr_metha)
+    res_enrmeth = str(enr_metha())
     fichier.write("\"Zabbix server\" Enr_methanisation_test " + res_enrmeth + "\n")
     
     res_eol = str(part_eolien_prod_15min())
