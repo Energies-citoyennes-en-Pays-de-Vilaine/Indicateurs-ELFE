@@ -165,7 +165,7 @@ async def main():
             enr_prod_mae += int(float(i['value']))*(1/20) #1 point aux 3 min
         surplus_prod = 0 #Production en surplus à partir de l'équilibre (en Wh)
         for i in zapi.history.get(hostids = [10084], itemids = [42883], time_from = tf, time_till = tt, output = "extend", limit = 44640, history=0):
-            if (float(i['value'])>0)
+            if (float(i['value'])>0):
                 surplus_prod += int(float(i['value']))*(1/60) #1 point par min
         enr_prod_et_conso = int(enr_prod_mae - surplus_prod) #Enr produite et consommée sur le territoire
         #Calcul de la production mise à l'échelle du panel pendant le mois courant => déjà fait avec enr_prod_mae
