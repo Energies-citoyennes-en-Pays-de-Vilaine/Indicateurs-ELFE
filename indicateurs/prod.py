@@ -111,15 +111,20 @@ async def main():
     #Calcul du pourcentage de la conso d'énergie des foyers placée
     def conso_enr_placee() -> int:
         #On commence par calculer la quantité d'énergie placée dans les dernières 24h
-        with conn_sortie.engine.connect() as conn:
-            #On fabrique une table sous la forme machine_type | nombre de lancements
-            cumul_enr_placee_24h:pd.DataFrame = pd.read_sql(""" SELECT SUM((0.25)*(p_c_with_flexible_consumption.power - p_c_without_flexible_consumption.power)) FROM p_c_with_flexible_consumption
-                                                        INNER JOIN p_c_without_flexible_consumption
-                                                        USING(data_timestamp)
-                                                        WHERE p_c_with_flexible_consumption.data_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT)) """
-                            , con = conn)
-            cumul_enr_placee_24h = -cumul_enr_placee_24h
-        cumul_enr_placee_24h = int(cumul_enr_placee_24h.loc[0]['sum'])
+        #with conn_sortie.engine.connect() as conn:
+        #    #On fabrique une table sous la forme machine_type | nombre de lancements
+        #    cumul_enr_placee_24h:pd.DataFrame = pd.read_sql(""" SELECT SUM((0.25)*(p_c_with_flexible_consumption.power - p_c_without_flexible_consumption.power)) FROM p_c_with_flexible_consumption
+        #                                                INNER JOIN p_c_without_flexible_consumption
+        #                                                USING(data_timestamp)
+        #                                                WHERE p_c_with_flexible_consumption.data_timestamp > (CAST(EXTRACT (epoch FROM NOW()) AS INT)) """
+        #                    , con = conn)
+        #    cumul_enr_placee_24h = -cumul_enr_placee_24h
+        #cumul_enr_placee_24h = int(cumul_enr_placee_24h.loc[0]['sum'])
+        zapi2 = createZapi()
+        tt = int(time.mktime(datetime.now().timetuple()))
+        tf = int(tt - 60 * 60)
+        #print(zapi2.history.get(hostids = [10084], itemids = [45357], time_from = tf, time_till = tt, output = "extend", limit = 1)[0]['value'])
+        cumul_enr_placee_24h = int(zapi2.history.get(hostids = [10084], itemids = [45357], time_from = tf, time_till = tt, output = "extend", limit = 1)[0]['value'])
         #Calcul de la consommation d'énergie du panel mis à l'échelle les dernières 24h (item Panel_R_puissance_mae dans Zabbix)
         zapi = createZapi()
         tt = int(time.mktime(datetime.now().timetuple()))
@@ -128,6 +133,7 @@ async def main():
         for i in zapi.history.get(hostids = [10084], itemids = [44968], time_from = tf, time_till = tt, output = "extend", limit = 1440, history = 0):
             puissance_panel_mae += int(float(i['value'])) * (1/60) #Panel_R_puissance_mae
         pourcentage_enr_conso_placee = int(100*(cumul_enr_placee_24h/puissance_panel_mae))
+        #print(pourcentage_enr_conso_placee)
         return pourcentage_enr_conso_placee
     
 
