@@ -147,7 +147,7 @@ async def main():
         #Calcul de la production mise à l'échelle sur l'heure (en Wh)
         enr_prod_mae = 0
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
-            enr_prod_mae += int(float(i['value']))*(1/20) #Panel_Prod_puissance_mae : 1 valeur toutes les 3 min
+            enr_prod_mae += int(float(i['value']))*(1/60) #Panel_Prod_puissance_mae : 1 valeur par minute
         #Calcul de la production en surplus à partir de l'équilibre (en Wh)
         surplus_prod = 0
         for i in zapi.history.get(hostids = [10084], itemids = [42883], time_from = tf, time_till = tt, output = "extend", limit = 1440, history=0):
@@ -168,7 +168,7 @@ async def main():
         #Calcul de l'enr produite et consommée sur le territoire pendant le mois courant
         enr_prod_mae = 0 #Production mise à l'échelle sur l'heure (en Wh)
         for i in zapi.history.get(hostids = [10084], itemids = [44969], time_from = tf, time_till = tt, output = "extend", limit = 44640, history=0):
-            enr_prod_mae += int(float(i['value']))*(1/20) #1 point aux 3 min
+            enr_prod_mae += int(float(i['value']))*(1/60) #1 point par min
         surplus_prod = 0 #Production en surplus à partir de l'équilibre (en Wh)
         for i in zapi.history.get(hostids = [10084], itemids = [42883], time_from = tf, time_till = tt, output = "extend", limit = 44640, history=0):
             if (float(i['value'])>0):
